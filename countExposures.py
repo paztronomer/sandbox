@@ -47,8 +47,8 @@ class Count():
                 a1 = tab[(tab['obstype']==lab) & (tab['band']==b)].shape[0]
                 if exclude:
                     tab_aux = tab[~np.in1d(tab['expnum'],exclude)]
-                    a2 = tab_aux[(tab_aux['obstype']==lab) & (tab['band']==b)
-                                ].shape[0]
+                    a2 = tab_aux[(tab_aux['obstype']==lab) & 
+                                (tab_aux['band']==b)].shape[0]
                 else:
                     a2 = np.nan
                 s1.append([lab,b,a1,a2])
