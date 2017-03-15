@@ -38,14 +38,14 @@ class Toolbox():
 
 class Count():
     @classmethod
-    def count(cls,nite,exclude=None):
+    def count(cls,nite,exclude,doit=True):
         tab = Toolbox.calib_nite(nite)
         #here there is no need for remove expnum duplicates
         s1 = []
         for lab in np.unique(tab['obstype']):
             for b in np.unique(tab['band']):
                 a1 = tab[(tab['obstype']==lab) & (tab['band']==b)].shape[0]
-                if exclude:
+                if doit:
                     tab_aux = tab[~np.in1d(tab['expnum'],exclude)]
                     a2 = tab_aux[(tab_aux['obstype']==lab) & 
                                 (tab_aux['band']==b)].shape[0]
@@ -56,9 +56,33 @@ class Count():
         print '{0:<12}{1:<12}{2:<8}'.format(*['OBSTYPE','BAND','N_EXP'])
         for i in xrange(len(s1)):
             print '{0:<12}{1:<12}{2:<8}{3:<8}'.format(*s1[i])
-        print '================================================='
+        print '=================================================\n'
         return s1
+
+    @classmethod
+    def bad_per_nite(cls,exclude):
+        exclude = np.loadtxt(exclude)
+        aux = ','.join([str(e) for e in exclude])
+        q = "select expnum,band,obstype,nite from exposure"
+        q += " where expnum in ({0})".format(aux)
+        q += " order by expnum"
+        datatype = ['i4','a10','a50','i4']
+        res = Toolbox.dbquery(q,datatype)
+        c = []
+        for nn in np.unique(res['nite']):
+            x1 = res[res['nite']==nn]
+            for bb in ['u','g','r','i','z','Y','VR']:#np.unique(x1['band']):
+                if x1[x1['band']==bb].shape[0] > 0:
+                    c.append([nn,bb,x1[x1['band']==bb].shape[0]])
+        print '============List of Bad Exposures'
+        print 'Remember to have at least 5 \ndflats (1st is discarded)'
+        print '{0:^15}{1:^10}{2:<10}'.format(*['NITE','BAND','N_EXP'])
+        for j in c:
+            print '{0:^15}{1:^10}{2:<10}'.format(*j)
+        print '================================'
 
 if __name__=='__main__':
     print time.ctime()
-    Count.count(20170206,exclude='y4_e2.BAD')
+    bad = np.loadtxt('y4_e2_UPDATED.BAD')
+    Count.count(20170206,bad)
+    Count.bad_per_nite(bad)
