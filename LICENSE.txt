@@ -2,7 +2,7 @@ University of Illinois/NCSA Open Source License
 Copyright (c) 2017 University of Illinois at Urbana-Champaign 
 All rights reserved.
 
-Developed by: 		Francisco Paz-Chinchón & DESDM group  
+Developed by:     Francisco Paz-Chinchón & DESDM group  
                   NCSA/University of Illinois
                   http://cosmology.illinois.edu
                   
