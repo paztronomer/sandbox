@@ -122,7 +122,10 @@ class Mimic(): #(CCD_position):
         x1 = np.floor(mask.shape[1]/np.float(binsize[1])).astype(int)
         s_mask = Mimic().scale_mask(mask,(x0,x1))
 
-        plt.imshow(s_mask,interpolation=None,cmap='jet')
+        #
+
+        exit()
+        plt.imshow(s_mask,interpolation=None,cmap='viridis')
         plt.show()
         print s_mask.shape
         exit()
@@ -150,14 +153,13 @@ class Mimic(): #(CCD_position):
         '''
         full_dim = CCD_position(rerun=header_again).tot_dim
         ccd_dim = CCD_position(rerun=header_again).ccd_dim
-        print ccd_dim
         #check for higher/lower coordinates without data outside them
         for x in ccd_dim:
             if (x[1] > x[2]) or (x[3] > x[4]):
                 logging.warning("Indices: initial > final")
                 exit(1)
-        n1 = (np.min(ccd_dim[:,1]),np.max(ccd_dim[:,3]))
-        n2 = (np.min(ccd_dim[:,2]),np.max(ccd_dim[:,4]))
+        n1 = (np.min(ccd_dim[:,1]),np.max(ccd_dim[:,2]))
+        n2 = (np.min(ccd_dim[:,3]),np.max(ccd_dim[:,4]))
         #create array for FP without unused borders
         d1,d2 = np.ptp(n1),np.ptp(n2)
         arr = np.zeros((d1,d2))
