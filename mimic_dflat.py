@@ -150,6 +150,7 @@ class Mimic(): #(CCD_position):
         '''
         full_dim = CCD_position(rerun=header_again).tot_dim
         ccd_dim = CCD_position(rerun=header_again).ccd_dim
+        print ccd_dim
         #check for higher/lower coordinates without data outside them
         for x in ccd_dim:
             if (x[1] > x[2]) or (x[3] > x[4]):
