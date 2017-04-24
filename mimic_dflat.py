@@ -11,6 +11,8 @@ import time
 import numpy as np
 import scipy
 import scipy.interpolate
+import scipy.ndimage
+import scipy.sparse as sparse
 #from scipy import ndimage
 import tables
 import fitsio
@@ -77,22 +79,20 @@ class CCD_position():
 
 
 class Mimic(): #(CCD_position):
-    def crop_borders(self,arr):
-        '''Given a 2D array, returns the lowest/highest coordinates for which
-        all elements are zeros, so we can reduce the dimension by throwing
-        away the unused borders. This method must check no non-zero pixels
-        apre present above the threshold
+    def feature1(self):
+        '''Feature 1, 2D gaussian, centered at (4/6,1/2) of the total
+        dimensions. Large pattern
         '''
-        #r[~np.all(r == 0, axis=1)]
-        #r[~np.all(r == 0, axis=1)]
-        return False
-
-    def feature_fp(self):
-        '''Method to create non uniformity shapes in the FP, to test the
-        detection efficiency of the DWT algorithm at different scales
-        '''
-        size = 0
-        #np.random.multivariate_normal(mean, cov, 10000)
+        def gauss2d(self,dim):
+            '''Method returns a 2D Gaussian, based in different means
+            and standard deviations
+            '''
+            sigma_x1,sigma_x2 = x0/2.,x1
+            mean_x1,mean_x2 = 4*dim[0]/np.float(6),0.5*dim[1]
+            f1 = np.exp(-1*(np.power(x1-mean_x1,2)/(2*np.power(sigma_x1,2))))
+            f2 = np.exp(-1*(np.power(x2-mean_x2,2)/(2*np.power(sigma_x2,2))))
+            f = f1*f2/(2*np.pi*sigma_x1*sigma_x2)
+            return f
         return False
 
     def join_binned(self,data=None,mask=None,binsize=16,header_again=False):
@@ -117,15 +117,28 @@ class Mimic(): #(CCD_position):
         #as mask is a binary-valued object, nearest neighbor interpolation is
         #the selected algorithm
         '''put this in the caller'''
-        mask = Mimic().ccd_mask()
+        mask = Mimic().ccd_mask(mask_again=True)
         x0 = np.floor(mask.shape[0]/np.float(binsize[0])).astype(int)
         x1 = np.floor(mask.shape[1]/np.float(binsize[1])).astype(int)
         s_mask = Mimic().scale_mask(mask,(x0,x1))
 
-        #the input FP is gonna be in the original dimensions
-        data = np.ones(mask.shape)
+        #the input focal plane image will be already in the new dimensions,
+        #to save computational time
+        data = np.ones(s_mask.shape)
+        mean = [x0/2,x1/3]
+        cov = [[x0/10,0],[0,x1/2]]
+        mvar = np.random.multivariate_normal(mean,cov,data.shape)
+        print mvar.shape
+        data += mvar[:,:,0]
+        data += mvar[:,:,1]
         aux = scipy.ndimage.filters.gaussian_filter(
-            data,sigma=(40,180),order=(0,3),mode='reflect')
+            data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
+
+
+        plt.imshow(aux,cmap='viridis',interpolation=None)
+        plt.show()
+        print type(aux)
+        print aux.shape
 
         exit()
         plt.imshow(s_mask,interpolation=None,cmap='viridis')
@@ -146,7 +159,7 @@ class Mimic(): #(CCD_position):
         #                       .reshape(ny,nx,blocksize*blocksize), axis=2)
         #    sky = np.ma.getdata(sky)
 
-    def ccd_mask(self,header_again=False,edge=15):
+    def ccd_mask(self,header_again=False,edge=15,mask_again=True):
         '''Method to construct a mask, using the dimensions and positions
         of the CCDs
         Inputs:
@@ -154,22 +167,30 @@ class Mimic(): #(CCD_position):
         CCD dimensions/borders
         - edge: number of pixels to be removed from the edge of each CCD
         '''
-        full_dim = CCD_position(rerun=header_again).tot_dim
-        ccd_dim = CCD_position(rerun=header_again).ccd_dim
-        #check for higher/lower coordinates without data outside them
-        for x in ccd_dim:
-            if (x[1] > x[2]) or (x[3] > x[4]):
-                logging.warning("Indices: initial > final")
-                exit(1)
-        n1 = (np.min(ccd_dim[:,1]),np.max(ccd_dim[:,2]))
-        n2 = (np.min(ccd_dim[:,3]),np.max(ccd_dim[:,4]))
-        #create array for FP without unused borders
-        d1,d2 = np.ptp(n1),np.ptp(n2)
-        arr = np.zeros((d1,d2))
-        for ccd in ccd_dim:
-            arr[ccd[1]-min(n1)-1+edge:ccd[2]-min(n1)-edge,
-                ccd[3]-min(n2)-1+edge:ccd[4]-min(n2)-edge] = 1
-        return arr
+        o1 = "ccd_mask_lil.npz"
+        if mask_again:
+            full_dim = CCD_position(rerun=header_again).tot_dim
+            ccd_dim = CCD_position(rerun=header_again).ccd_dim
+            #check for higher/lower coordinates without data outside them
+            for x in ccd_dim:
+                if (x[1] > x[2]) or (x[3] > x[4]):
+                    logging.warning("Indices: initial > final")
+                    exit(1)
+            n1 = (np.min(ccd_dim[:,1]),np.max(ccd_dim[:,2]))
+            n2 = (np.min(ccd_dim[:,3]),np.max(ccd_dim[:,4]))
+            #create array for FP without unused borders
+            d1,d2 = np.ptp(n1),np.ptp(n2)
+            arr = np.zeros((d1,d2))
+            for ccd in ccd_dim:
+                arr[ccd[1]-min(n1)-1+edge:ccd[2]-min(n1)-edge,
+                    ccd[3]-min(n2)-1+edge:ccd[4]-min(n2)-edge] = 1
+            #convert to sparse matrix
+            lil_arr = sparse.lil_matrix(arr)
+            sparse.save_npz(o1,lil_arr)
+        else:
+            #load bsr matrix
+            lil_arr = sparse.load_npz(o1)
+        return lil_arr
 
     def scale_mask(self,base,target_dim):
         '''Method adapted from: scalMask_dflat.py
