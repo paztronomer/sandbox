@@ -122,7 +122,10 @@ class Mimic(): #(CCD_position):
         x1 = np.floor(mask.shape[1]/np.float(binsize[1])).astype(int)
         s_mask = Mimic().scale_mask(mask,(x0,x1))
 
-        #
+        #the input FP is gonna be in the original dimensions
+        data = np.ones(mask.shape)
+        aux = scipy.ndimage.filters.gaussian_filter(
+            data,sigma=(40,180),order=(0,3),mode='reflect')
 
         exit()
         plt.imshow(s_mask,interpolation=None,cmap='viridis')
