@@ -79,6 +79,17 @@ class CCD_position():
 
 
 class Mimic(): #(CCD_position):
+    def gauss2d(self,x1,x2,mu_x1,mu_x2,sigma_x1,sigma_x2):
+        '''Method returns a 2D Gaussian, based in different means
+        and standard deviations
+        '''
+        x1,x2 = np.meshgrid(x1,x2)
+        f1 = np.exp(-0.5*np.power((x1-mu_x1)/sigma_x1,2))
+        f2 = np.exp(-0.5*np.power((x2-mu_x2)/sigma_x2,2))
+        f = f1*f2/(2.*np.pi*sigma_x1*sigma_x2)
+        f = f.T
+        return f
+
     def feature_multivariate(self,dim):
         '''Method to construct a test multivariate feature
         '''
@@ -95,39 +106,40 @@ class Mimic(): #(CCD_position):
         return aux
 
     def feature1(self,dim):
-        '''Feature-1, 2D gaussian, centered at (NNNNNNN) of the total
-        dimensions. Large pattern, soft by a Gaussian filter.
+        '''Feature-1, 2D gaussian, large pattern, soft by a Gaussian filter.
+        Remember FWHM ~ 2.3548 sigma
         Inputs:
         - dim: dimensions of the binned FP
+        Output:
+        - 2D array with the feature
         '''
-        def gauss2d(dim):
-            '''Method returns a 2D Gaussian, based in different means
-            and standard deviations
-            '''
-            d1,d2 = dim
-            vx1,vx2 = np.arange(0,d1),np.arange(0,d2)
-            vx1,vx2 = np.meshgrid(vx1,vx2)
-            sd_x1,sd_x2 = 16.,16.
-            mu_x1,mu_x2 = d1,d2/2.
-            f1 = np.exp(-0.5*np.power((vx1-mu_x1)/sd_x1,2))
-            f2 = np.exp(-0.5*np.power((vx2-mu_x2)/sd_x2,2))
-            f = f1*f2/(2.*np.pi*sd_x1*sd_x2)
-            f = f.T
-            return f
+        '''d1,d2 = dim
+        vx1,vx2 = np.arange(0,d1),np.arange(0,d2)
+        vx1,vx2 = np.meshgrid(vx1,vx2)
+        sd_x1,sd_x2 = 16.,16.
+        mu_x1,mu_x2 = d1,d2/2.
         data = np.zeros(dim)
         data += gauss2d(dim)
-        filt_s1,filt_s2 = dim[0]/4.,dim[1]/4.
-        #Gaussian derivate order
-        filt_o1,filt_o2 = 0,0
-        aux = scipy.ndimage.filters.gaussian_filter(
-            data,sigma=(filt_s1,filt_s2),order=(filt_o1,filt_o2),
-            mode='reflect')
-        return aux
+        '''
+        y1,y2 = np.arange(0,dim[0]),np.arange(0,dim[1])
+        #centers for the Gaussians
+        mean_y1,mean_y2 = 0.5*dim[0],1.05*dim[1]
+        #standard deviations for the distribution
+        sigma_y1,sigma_y2 = dim[0]/2.35,0.8*dim[1]/2.35
+        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        if False:
+            filt_s1,filt_s2 = dim[0]/4.,dim[1]/4.
+            #Gaussian derivate order
+            filt_o1,filt_o2 = 0,0
+            aux = scipy.ndimage.filters.gaussian_filter(
+                data,sigma=(filt_s1,filt_s2),order=(filt_o1,filt_o2),
+                mode='reflect')
+        return data
 
     def join_binned(self,data=None,mask=None,binsize=16,header_again=False):
-        """Method to reduce the dimensions of the simulated focal plane and
-        of the mask. To not mess with combining data from mask and image,
-        both of them will be processed separately and then joined
+        """Method to put together mask and data. To not mess with combining
+        data from mask and image (averaging borders with data), both of them
+        will be processed separately and then joined
         Inputs:
         - data
         - mask
@@ -146,11 +158,16 @@ class Mimic(): #(CCD_position):
         #as mask is a binary-valued object, nearest neighbor interpolation is
         #the selected algorithm
         '''put this in the caller'''
-        mask = Mimic().ccd_mask(mask_again=False)
-        print mask.shape
-        x0 = np.floor(mask.shape[0]/np.float(binsize[0])).astype(int)
-        x1 = np.floor(mask.shape[1]/np.float(binsize[1])).astype(int)
-        s_mask = Mimic().scale_mask(mask,(x0,x1))
+        #put this in a method
+        if False:
+            mask = Mimic().ccd_mask(mask_again=False)
+            print mask.shape
+            x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
+            x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
+            s_mask = Mimic().scale_mask(mask,(x0,x1))
+            np.save('s_mask.npy',s_mask)
+        else:
+            s_mask = np.load('s_mask.npy')
         #the input focal plane image will be already in the new dimensions,
         #to save computational time
         if False: mvar = Mimic().feature_multivariate(s_mask.shape)
@@ -159,7 +176,7 @@ class Mimic(): #(CCD_position):
 
         print type(feat1)
 
-        im = plt.imshow(feat1,cmap='viridis',interpolation=None)
+        im = plt.imshow(feat1,cmap='viridis',interpolation=None,origin='lower')
         plt.colorbar(im)
         plt.show()
 
