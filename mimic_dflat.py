@@ -79,21 +79,50 @@ class CCD_position():
 
 
 class Mimic(): #(CCD_position):
-    def feature1(self):
-        '''Feature 1, 2D gaussian, centered at (4/6,1/2) of the total
-        dimensions. Large pattern
+    def feature_multivariate(self,dim):
+        '''Method to construct a test multivariate feature
         '''
-        def gauss2d(self,dim):
+        data = np.ones(dim)
+        x0,x1 = dim
+        mean = [x0/2,x1/3]
+        cov = [[x0/10,0],[0,x1/2]]
+        np.random.seed(20170425)
+        mvar = np.random.multivariate_normal(mean,cov,data.shape)
+        data += mvar[:,:,0]
+        data += mvar[:,:,1]
+        aux = scipy.ndimage.filters.gaussian_filter(
+            data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
+        return aux
+
+    def feature1(self,dim):
+        '''Feature-1, 2D gaussian, centered at (NNNNNNN) of the total
+        dimensions. Large pattern, soft by a Gaussian filter.
+        Inputs:
+        - dim: dimensions of the binned FP
+        '''
+        def gauss2d(dim):
             '''Method returns a 2D Gaussian, based in different means
             and standard deviations
             '''
-            sigma_x1,sigma_x2 = x0/2.,x1
-            mean_x1,mean_x2 = 4*dim[0]/np.float(6),0.5*dim[1]
-            f1 = np.exp(-1*(np.power(x1-mean_x1,2)/(2*np.power(sigma_x1,2))))
-            f2 = np.exp(-1*(np.power(x2-mean_x2,2)/(2*np.power(sigma_x2,2))))
-            f = f1*f2/(2*np.pi*sigma_x1*sigma_x2)
+            d1,d2 = dim
+            vx1,vx2 = np.arange(0,d1),np.arange(0,d2)
+            vx1,vx2 = np.meshgrid(vx1,vx2)
+            sd_x1,sd_x2 = 16.,16.
+            mu_x1,mu_x2 = d1,d2/2.
+            f1 = np.exp(-0.5*np.power((vx1-mu_x1)/sd_x1,2))
+            f2 = np.exp(-0.5*np.power((vx2-mu_x2)/sd_x2,2))
+            f = f1*f2/(2.*np.pi*sd_x1*sd_x2)
+            f = f.T
             return f
-        return False
+        data = np.zeros(dim)
+        data += gauss2d(dim)
+        filt_s1,filt_s2 = dim[0]/4.,dim[1]/4.
+        #Gaussian derivate order
+        filt_o1,filt_o2 = 0,0
+        aux = scipy.ndimage.filters.gaussian_filter(
+            data,sigma=(filt_s1,filt_s2),order=(filt_o1,filt_o2),
+            mode='reflect')
+        return aux
 
     def join_binned(self,data=None,mask=None,binsize=16,header_again=False):
         """Method to reduce the dimensions of the simulated focal plane and
@@ -117,35 +146,24 @@ class Mimic(): #(CCD_position):
         #as mask is a binary-valued object, nearest neighbor interpolation is
         #the selected algorithm
         '''put this in the caller'''
-        mask = Mimic().ccd_mask(mask_again=True)
+        mask = Mimic().ccd_mask(mask_again=False)
+        print mask.shape
         x0 = np.floor(mask.shape[0]/np.float(binsize[0])).astype(int)
         x1 = np.floor(mask.shape[1]/np.float(binsize[1])).astype(int)
         s_mask = Mimic().scale_mask(mask,(x0,x1))
-
         #the input focal plane image will be already in the new dimensions,
         #to save computational time
-        data = np.ones(s_mask.shape)
-        mean = [x0/2,x1/3]
-        cov = [[x0/10,0],[0,x1/2]]
-        mvar = np.random.multivariate_normal(mean,cov,data.shape)
-        print mvar.shape
-        data += mvar[:,:,0]
-        data += mvar[:,:,1]
-        aux = scipy.ndimage.filters.gaussian_filter(
-            data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
+        if False: mvar = Mimic().feature_multivariate(s_mask.shape)
+        feat1 = Mimic().feature1(s_mask.shape)
+        #mask it
 
+        print type(feat1)
 
-        plt.imshow(aux,cmap='viridis',interpolation=None)
+        im = plt.imshow(feat1,cmap='viridis',interpolation=None)
+        plt.colorbar(im)
         plt.show()
-        print type(aux)
-        print aux.shape
 
         exit()
-        plt.imshow(s_mask,interpolation=None,cmap='viridis')
-        plt.show()
-        print s_mask.shape
-        exit()
-
         #Old method, sky_compress
         #if no mask
         #sky = np.median(image.data.reshape(ny,blocksize,nx,blocksize)
@@ -161,17 +179,20 @@ class Mimic(): #(CCD_position):
 
     def ccd_mask(self,header_again=False,edge=15,mask_again=True):
         '''Method to construct a mask, using the dimensions and positions
-        of the CCDs
+        of the CCDs. Converts it to sparse matrix, to save to disk: this
+        is about 100 times lighter than normal numpy arrays (215 Mb vs 20 Gb)
         Inputs:
         - again: whether to make do again the FITS header compilation of
         CCD dimensions/borders
         - edge: number of pixels to be removed from the edge of each CCD
+        - mask_again: wether to use the header info again to construct the
+        FP mask again
         '''
-        o1 = "ccd_mask_lil.npz"
+        o1 = "ccd_mask_bsr.npz"
         if mask_again:
             full_dim = CCD_position(rerun=header_again).tot_dim
             ccd_dim = CCD_position(rerun=header_again).ccd_dim
-            #check for higher/lower coordinates without data outside them
+            #check for higher/lower bsrrdinates without data outside them
             for x in ccd_dim:
                 if (x[1] > x[2]) or (x[3] > x[4]):
                     logging.warning("Indices: initial > final")
@@ -180,17 +201,19 @@ class Mimic(): #(CCD_position):
             n2 = (np.min(ccd_dim[:,3]),np.max(ccd_dim[:,4]))
             #create array for FP without unused borders
             d1,d2 = np.ptp(n1),np.ptp(n2)
-            arr = np.zeros((d1,d2))
+            arr = np.ones((d1,d2))
             for ccd in ccd_dim:
                 arr[ccd[1]-min(n1)-1+edge:ccd[2]-min(n1)-edge,
-                    ccd[3]-min(n2)-1+edge:ccd[4]-min(n2)-edge] = 1
+                    ccd[3]-min(n2)-1+edge:ccd[4]-min(n2)-edge] = 0
             #convert to sparse matrix
-            lil_arr = sparse.lil_matrix(arr)
-            sparse.save_npz(o1,lil_arr)
+            bsr_arr = sparse.bsr_matrix(arr)
+            sparse.save_npz(o1,bsr_arr)
         else:
             #load bsr matrix
-            lil_arr = sparse.load_npz(o1)
-        return lil_arr
+            bsr_arr = sparse.load_npz(o1)
+            if not isinstance(bsr_arr,np.ndarray):
+                bsr_arr = bsr_arr.toarray()
+        return bsr_arr
 
     def scale_mask(self,base,target_dim):
         '''Method adapted from: scalMask_dflat.py
