@@ -63,7 +63,7 @@ class Toolbox():
         '''
         arr = arr.ravel()
         v1,v2 = np.percentile(arr,percent_low),np.percentile(arr,percent_up)
-        tmp = arr[np.where(np.logival_and(arr>=v1,arr<=v2))]
+        tmp = arr[np.where(np.logical_and(arr>=v1,arr<=v2))]
         return np.mean(tmp)
 
 
@@ -276,6 +276,8 @@ class Mimic(): #(CCD_position):
         aux = scipy.ndimage.filters.gaussian_filter(
             data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
         aux += np.abs(np.min(aux))
+        avg = Toolbox().range_mean(aux,90,100)
+        aux = aux*(0.001/avg)
         return aux
 
     def feature1(self,dim):
@@ -293,6 +295,8 @@ class Mimic(): #(CCD_position):
         #standard deviations for the distribution
         sigma_y1,sigma_y2 = dim[1]/2.35,0.8*dim[0]/2.35
         data = Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        avg = Toolbox().range_mean(data,90,100)
+        data = data*(0.001/avg)
         return data
 
     def feature2(self,dim):
@@ -318,6 +322,8 @@ class Mimic(): #(CCD_position):
         r_data = scipy.ndimage.interpolation.rotate(data,angle=-45.,axes=(1,0),
                                                     reshape=False,order=3,
                                                     mode='constant')
+        avg = Toolbox().range_mean(r_data,90,100)
+        r_data = r_data*(0.001/avg)
         return r_data[d0/3:d0/3+dim[0],d1/3:d1/3+dim[1]]
 
     def feature3(self,dim):
@@ -345,6 +351,8 @@ class Mimic(): #(CCD_position):
         #corner 4
         mean_y1,mean_y2 = dim[1],dim[0]
         data += Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        avg = Toolbox().range_mean(data,90,100)
+        data = data*(0.001/avg)
         return data
 
     def join_binned(self,binsize=16,header_again=False,mask_again=False,
@@ -395,15 +403,15 @@ class Mimic(): #(CCD_position):
         feat3 = Mimic().feature3(s_mask.shape)
         aux_min3 = np.min(feat3)
         feat3[s_mask.astype(bool)] = -1
-        if False:
+        if True:
             np.save('featmvar_b{0}{1}.npy'.format(*binsize),mvar)
             np.save('feat1_b{0}{1}.npy'.format(*binsize),mvar)
             np.save('feat2_b{0}{1}.npy'.format(*binsize),mvar)
             np.save('feat3_b{0}{1}.npy'.format(*binsize),mvar)
         if True:
             #checking by plot
-            im = plt.imshow(mvar,cmap='viridis',interpolation='none',
-                        origin='upper',vmin=aux_min_plot)
+            im = plt.imshow(feat3,cmap='viridis',interpolation='none',
+                        origin='upper',vmin=aux_min3)
             plt.colorbar(im)
             plt.show()
         print '\nFeatures for binning {0}x{1} were saved'.format(*binsize)
