@@ -32,6 +32,41 @@ Pending:
 1) crop the borders, np.all(a == a[0,:], axis = 0) --DONE
 '''
 
+class Toolbox():
+    def gauss2d(self,x1,x2,mu_x1,mu_x2,sigma_x1,sigma_x2):
+        '''Method returns a 2D Gaussian, based in given vectors, means
+        and standard deviations.
+        Inputs:
+        - x1,x2: 1D arrays to be used to define the meshgrid for which the
+        Gaussian will be calculated.
+        - mu_x1, mu_x2: float, means of both axis for which the Gaussian is
+        defined
+        - sigma_x1,sigma_x2: standard deviations for both the axis
+        Outputs:
+        - 2D array with the Gaussian profile
+        '''
+        x1,x2 = np.meshgrid(x1,x2)
+        f1 = np.exp(-0.5*np.power((x1-mu_x1)/sigma_x1,2))
+        f2 = np.exp(-0.5*np.power((x2-mu_x2)/sigma_x2,2))
+        f = f1*f2/(2.*np.pi*sigma_x1*sigma_x2)
+        return f
+
+    def range_mean(self,arr,percent_low,percent_up):
+        '''Method to calculate the mean of a range of values, given a
+        distribution.
+        Inputs:
+        - arr: ndarray for which the mean will be calculated
+        - percent_low,percent_up: limits of the range for which the mean will
+        be calculated. Values in percent, from 0 t0 100
+        Outputs:
+        - value
+        '''
+        arr = arr.ravel()
+        v1,v2 = np.percentile(arr,percent_low),np.percentile(arr,percent_up)
+        tmp = arr[np.where(np.logival_and(arr>=v1,arr<=v2))]
+        return np.mean(tmp)
+
+
 class CCD_position():
     def __init__(self,path='/work/devel/fpazch/calib_space',
                 fname='DECam_00615355.fits.fz',
@@ -217,24 +252,6 @@ class Mimic(): #(CCD_position):
             return None
         return bin_mask
 
-    def gauss2d(self,x1,x2,mu_x1,mu_x2,sigma_x1,sigma_x2):
-        '''Method returns a 2D Gaussian, based in given vectors, means
-        and standard deviations.
-        Inputs:
-        - x1,x2: 1D arrays to be used to define the meshgrid for which the
-        Gaussian will be calculated.
-        - mu_x1, mu_x2: float, means of both axis for which the Gaussian is
-        defined
-        - sigma_x1,sigma_x2: standard deviations for both the axis
-        Outputs:
-        - 2D array with the Gaussian profile
-        '''
-        x1,x2 = np.meshgrid(x1,x2)
-        f1 = np.exp(-0.5*np.power((x1-mu_x1)/sigma_x1,2))
-        f2 = np.exp(-0.5*np.power((x2-mu_x2)/sigma_x2,2))
-        f = f1*f2/(2.*np.pi*sigma_x1*sigma_x2)
-        return f
-
     def feature_multivariate(self,dim):
         '''Method to construct a test multivariate random feature. The seed is
         given so the result will be consistent between runs.
@@ -275,7 +292,7 @@ class Mimic(): #(CCD_position):
         mean_y1,mean_y2 = 0.5*dim[1],1.05*dim[0]
         #standard deviations for the distribution
         sigma_y1,sigma_y2 = dim[1]/2.35,0.8*dim[0]/2.35
-        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        data = Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         return data
 
     def feature2(self,dim):
@@ -296,12 +313,12 @@ class Mimic(): #(CCD_position):
         mean_y1,mean_y2 = d1/5.,d0/3.
         #standard deviations for the distribution
         sigma_y1,sigma_y2 = .4*d1/2.35,2.*d0/2.35
-        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        data = Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         #rotate
         r_data = scipy.ndimage.interpolation.rotate(data,angle=-45.,axes=(1,0),
                                                     reshape=False,order=3,
                                                     mode='constant')
-        return r_data[d1/3:d1/3+dim[1],d0/3:d0/3+dim[0]]
+        return r_data[d0/3:d0/3+dim[0],d1/3:d1/3+dim[1]]
 
     def feature3(self,dim):
         '''Feature-1, 2D gaussian, 4 spots at the corners. The feature was
@@ -318,16 +335,16 @@ class Mimic(): #(CCD_position):
         sigma_y1,sigma_y2 = 0.4*dim[1]/2.35,0.4*dim[0]/2.35
         #corner 1
         mean_y1,mean_y2 = 0*dim[1],0*dim[0]
-        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        data = Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         #corner 2
         mean_y1,mean_y2 = 0*dim[1],dim[0]
-        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        data += Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         #corner 3
         mean_y1,mean_y2 = dim[1],0*dim[0]
-        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        data += Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         #corner 4
         mean_y1,mean_y2 = dim[1],dim[0]
-        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        data += Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         return data
 
     def join_binned(self,binsize=16,header_again=False,mask_again=False,
@@ -363,27 +380,33 @@ class Mimic(): #(CCD_position):
         #the feature data
         #the input focal plane image will be already in the new dimensions,
         #to save computational time
+        mvar = Mimic().feature_multivariate(s_mask.shape)
+        aux_minvar = np.min(mvar)
+        mvar[s_mask.astype(bool)] = -1
+        #
+        feat1 = Mimic().feature1(s_mask.shape)
+        aux_min1 = np.min(feat1)
+        feat1[s_mask.astype(bool)] = -1
+        #
+        feat2 = Mimic().feature2(s_mask.shape)
+        aux_min2 = np.min(feat2)
+        feat2[s_mask.astype(bool)] = -1
+        #
+        feat3 = Mimic().feature3(s_mask.shape)
+        aux_min3 = np.min(feat3)
+        feat3[s_mask.astype(bool)] = -1
         if False:
-            mvar = Mimic().feature_multivariate(s_mask.shape)
-            aux_min = np.min(mvar)
-            mvar[s_mask.astype(bool)] = -1
-        if False:
-            feat1 = Mimic().feature1(s_mask.shape)
-            aux_min = np.min(feat1)
-            feat1[s_mask.astype(bool)] = -1
-        if False:
-            feat2 = Mimic().feature2(s_mask.shape)
-            aux_min = np.min(feat2)
-            feat2[s_mask.astype(bool)] = -1
+            np.save('featmvar_b{0}{1}.npy'.format(*binsize),mvar)
+            np.save('feat1_b{0}{1}.npy'.format(*binsize),mvar)
+            np.save('feat2_b{0}{1}.npy'.format(*binsize),mvar)
+            np.save('feat3_b{0}{1}.npy'.format(*binsize),mvar)
         if True:
-            feat3 = Mimic().feature3(s_mask.shape)
-            aux_min = np.min(feat3)
-            feat3[s_mask.astype(bool)] = -1
             #checking by plot
-            im = plt.imshow(feat3,cmap='viridis',interpolation='none',
-                        origin='upper',vmin=aux_min)
+            im = plt.imshow(mvar,cmap='viridis',interpolation='none',
+                        origin='upper',vmin=aux_min_plot)
             plt.colorbar(im)
             plt.show()
+        print '\nFeatures for binning {0}x{1} were saved'.format(*binsize)
         return True
 
 
