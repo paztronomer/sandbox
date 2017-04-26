@@ -89,7 +89,10 @@ class CCD_position():
         to self.tot_dim. To do that it saves or loads pickle objects
         (ccd_dim.pickle,fp_dim.pickle)
         '''
-        o1,o2 = 'ccd_dim.pickle','fp_dim.pickle'
+        path = os.path.join(os.path.expanduser('~'),
+                        'Code/des_calibrations/dwt_test_files')
+        fn = lambda s: os.path.join(path,s)
+        o1,o2 = fn('ccd_dim.pickle'),fn('fp_dim.pickle')
         if rerun:
             d = os.path.join(path,fname)
             M_hdu = fitsio.FITS(d)
@@ -136,7 +139,10 @@ class Mimic(): #(CCD_position):
         Outputs:
         - sparse BSR matrix converted to dense array
         '''
-        o1 = "ccd_mask_bsr.npz"
+        path = os.path.join(os.path.expanduser('~'),
+                        'Code/des_calibrations/dwt_test_files')
+        fn = lambda s: os.path.join(path,s)
+        o1 = fn("ccd_mask_bsr.npz")
         if mask_again:
             full_dim = CCD_position(rerun=header_again).tot_dim
             ccd_dim = CCD_position(rerun=header_again).ccd_dim
@@ -231,22 +237,25 @@ class Mimic(): #(CCD_position):
         Outputs:
         - 2D array of 1/0 being the mask, which size defined by the binning
         '''
+        path = os.path.join(os.path.expanduser('~'),
+                        'Code/des_calibrations/dwt_test_files')
+        fn = lambda s: os.path.join(path,s)
         if (binsize == (16,16) and not mask_again):
-            bin_mask = np.load('s_mask_b{0}{1}.npy'.format(*binsize))
+            bin_mask = np.load(fn('s_mask_b{0}{1}.npy'.format(*binsize)))
         elif (binsize != (16,16) and not mask_again):
             mask = Mimic().ccd_mask(mask_again=mask_again,
                                 header_again=header_again)
             x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
             x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
             bin_mask = Mimic().scale_mask(mask,(x0,x1))
-            np.save('s_mask_b{0}{1}.npy'.format(*binsize),bin_mask)
+            np.save(fn('s_mask_b{0}{1}.npy'.format(*binsize)),bin_mask)
         elif mask_again:
             mask = Mimic().ccd_mask(mask_again=mask_again,
                                 header_again=header_again)
             x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
             x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
             bin_mask = Mimic().scale_mask(mask,(x0,x1))
-            np.save('s_mask_b{0}{1}.npy'.format(*binsize),bin_mask)
+            np.save(fn('s_mask_b{0}{1}.npy'.format(*binsize)),bin_mask)
         else:
             logging.warning('Error loading the mask')
             return None
@@ -404,10 +413,13 @@ class Mimic(): #(CCD_position):
         aux_min3 = np.min(feat3)
         feat3[s_mask.astype(bool)] = -1
         if True:
-            np.save('featmvar_b{0}{1}.npy'.format(*binsize),mvar)
-            np.save('feat1_b{0}{1}.npy'.format(*binsize),mvar)
-            np.save('feat2_b{0}{1}.npy'.format(*binsize),mvar)
-            np.save('feat3_b{0}{1}.npy'.format(*binsize),mvar)
+            path = os.path.join(os.path.expanduser('~'),
+                            'Code/des_calibrations/dwt_test_files')
+            fn = lambda s: os.path.join(path,s)
+            np.save(fn('featmvar_b{0}{1}.npy'.format(*binsize)),mvar)
+            np.save(fn('feat1_b{0}{1}.npy'.format(*binsize)),mvar)
+            np.save(fn('feat2_b{0}{1}.npy'.format(*binsize)),mvar)
+            np.save(fn('feat3_b{0}{1}.npy'.format(*binsize)),mvar)
         if True:
             #checking by plot
             im = plt.imshow(feat3,cmap='viridis',interpolation='none',
@@ -420,4 +432,4 @@ class Mimic(): #(CCD_position):
 
 if __name__=='__main__':
     #pos = CCD_position()
-    Mimic().join_binned()
+    Mimic().join_binned(binsize=4)
