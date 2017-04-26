@@ -2,7 +2,8 @@
 Script to create mimic dome flats, by seeting up a focal plane array with
 some feature and then applying the mask of the CCD sections, which effectively
 catches the light
-Different to my usual codes, I'll use self instead of cls
+Different to my usual codes, I'll use method bounded to instances (self),
+instead of methods bounded to classes (cls)
 '''
 import os
 import sys
@@ -17,7 +18,6 @@ import scipy.sparse as sparse
 import tables
 import fitsio
 import pickle
-#setup for display visualization
 import matplotlib
 #matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -26,12 +26,11 @@ import matplotlib.pyplot as plt
 STEPS
 1) read and pickle header from an exposure, to get the CCDs positions --DONE
 2) mask the borders of each CCD --DONE
-3) create features
-4) resize Fp and mask to different scales
+3) create features --DONE
+4) resize Fp and mask to different scales --DONE
 Pending:
-1) crop the borders, np.all(a == a[0,:], axis = 0)
+1) crop the borders, np.all(a == a[0,:], axis = 0) --DONE
 '''
-
 
 class CCD_position():
     def __init__(self,path='/work/devel/fpazch/calib_space',
@@ -43,9 +42,17 @@ class CCD_position():
         default extension. The division is:
         - 1 to 62: science / hduname '{N/S}{1-31}'
         - 63 to 70: guider/focus / hduname 'F{N/S}{1-4}'
-
         To read data: hdu[ext][:,:] or hdu[ext].read()
         To read header keys: hdu[ext].read_header()['key']
+        Inputs:
+        - path: directory of the raw exposure (can be anyone)
+        - fname: filename raw exposure (can be compressed or uncompressed)
+        - rerun: wether to create again the array with the ccd limits and
+        focal plane dimension
+        Outputs:
+        - assigns ccd limits to self.ccd_dim, and total focal plane dimensions
+        to self.tot_dim. To do that it saves or loads pickle objects
+        (ccd_dim.pickle,fp_dim.pickle)
         '''
         o1,o2 = 'ccd_dim.pickle','fp_dim.pickle'
         if rerun:
@@ -54,7 +61,7 @@ class CCD_position():
             dim = np.empty((0,5))
             for M in M_hdu[1:]:
                 x = M.read_header()
-                if (x['CCDNUM'] <= 62) and (x['CCDNUM'] > 0):
+                if ((x['CCDNUM'] <= 62) and (x['CCDNUM'] > 0)):
                     x0 = CCD_position().dim_str(x['DETSIZE'])
                     x1 = np.array([x['CCDNUM']])
                     x2 = CCD_position().dim_str(x['DETSEC'])
@@ -79,196 +86,20 @@ class CCD_position():
 
 
 class Mimic(): #(CCD_position):
-    def gauss2d(self,x1,x2,mu_x1,mu_x2,sigma_x1,sigma_x2):
-        '''Method returns a 2D Gaussian, based in different means
-        and standard deviations
-        '''
-        x1,x2 = np.meshgrid(x1,x2)
-        f1 = np.exp(-0.5*np.power((x1-mu_x1)/sigma_x1,2))
-        f2 = np.exp(-0.5*np.power((x2-mu_x2)/sigma_x2,2))
-        f = f1*f2/(2.*np.pi*sigma_x1*sigma_x2)
-        f = f.T
-        return f
-
-    def feature_multivariate(self,dim):
-        '''Method to construct a test multivariate feature. The seed is given
-        so the result will be consistent between runs.
-        I tuned the parameters to give an illumination pattern with a peak in a
-        corner and two lower peaks along an edge
-        After the multivariate sampling, a Gaussina filter is applied. Is the
-        combination of this two methods who give the results and not alone.
-        Inputs:
-        - dim: fimensions of the binned FP
-        Returns:
-        - a 2D array with lower value being zero
-        '''
-        data = np.ones(dim)
-        x0,x1 = dim
-        mean = [x0/4,x1/3]
-        cov = [[x0/16,0],[0,x1/2]]
-        np.random.seed(20170425)
-        mvar = np.random.multivariate_normal(mean,cov,data.shape)
-        data += mvar[:,:,0]
-        data += mvar[:,:,1]
-        aux = scipy.ndimage.filters.gaussian_filter(
-            data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
-        aux += np.abs(np.min(aux))
-        return aux
-
-    def feature1(self,dim):
-        '''Feature-1, 2D gaussian, large pattern, vertical on the edge.
-        Remember FWHM ~ 2.3548 sigma
-        Inputs:
-        - dim: dimensions of the binned FP
-        Output:
-        - 2D array with the feature
-        '''
-        y1,y2 = np.arange(0,dim[0]),np.arange(0,dim[1])
-        #centers for the Gaussians
-        mean_y1,mean_y2 = 0.5*dim[0],1.05*dim[1]
-        #standard deviations for the distribution
-        sigma_y1,sigma_y2 = dim[0]/2.35,0.8*dim[1]/2.35
-        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
-        return data
-
-    def feature2(self,dim):
-        '''Feature-1, 2D gaussian, large pattern, rotated in 45 deg, maximum
-        at the corner.
-        Remember FWHM ~ 2.3548 sigma
-        Inputs:
-        - dim: dimensions of the binned FP
-        Output:
-        - 2D array with the feature
-        '''
-        d0,d1 = 3*dim[0],3*dim[1]
-        y1,y2 = np.arange(0,d0),np.arange(0,d1)
-        #centers for the Gaussians
-        mean_y1,mean_y2 = d0/5.,d1/3.
-        #standard deviations for the distribution
-        sigma_y1,sigma_y2 = .4*d0/2.35,2.*d1/2.35
-        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
-        #rotate
-        r_data = scipy.ndimage.interpolation.rotate(data,angle=-45.,axes=(1,0),
-                                                    reshape=False,order=3,
-                                                    mode='constant')
-        return r_data[d0/3:d0/3+dim[0],d1/3:d1/3+dim[1]]
-
-    def feature3(self,dim):
-        '''Feature-1, 2D gaussian, 4 spots at the corners.
-        Remember FWHM ~ 2.3548 sigma
-        Inputs:
-        - dim: dimensions of the binned FP
-        Output:
-        - 2D array with the multiple features
-        '''
-        y1,y2 = np.arange(0,dim[0]),np.arange(0,dim[1])
-        #centers for the Gaussians
-        mean_y1,mean_y2 = 0*dim[0],0*dim[1]
-        #standard deviations for the distribution
-        sigma_y1,sigma_y2 = 0.4*dim[0]/2.35,0.4*dim[1]/2.35
-        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
-        #
-        mean_y1,mean_y2 = 0*dim[0],dim[1]
-        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
-        #
-        mean_y1,mean_y2 = dim[0],0*dim[1]
-        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
-        #
-        mean_y1,mean_y2 = dim[0],dim[1]
-        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
-        return data
-
-    def get_mask(self,binsize,mask_again=False):
-        '''Method to return the mask for the selected binning. A copy of
-        the mask at resolution 16x16 is stored to speed up the loading.
-        If other binsize is given, the mask will be recalculated.
-        If the parameter mask_again is True, the mask will be computed from
-        the header information
-        The mask has 1 for outside region and 0 for inside CCDs
-        Inputs:
-        - binsize: tuple of 2 elements, giving the shape of the used bin
-        - mask_again: wether to recalculate the mask from the header
-        information, stored in ccd_dim.pickle. This will call ccd_mask()
-        method
-        Returns:
-        - mask in the size defined by the binning
-        '''
-        if (binsize == (16,16) and not mask_again):
-            bin_mask = np.load('s_mask_b16.npy')
-        elif (binsize != (16,16) and not mask_again):
-            mask = Mimic().ccd_mask(mask_again=mask_again)
-            x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
-            x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
-            bin_mask = Mimic().scale_mask(mask,(x0,x1))
-        elif mask_again:
-            mask = Mimic().ccd_mask(mask_again=mask_again)
-            x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
-            x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
-            bin_mask = Mimic().scale_mask(mask,(x0,x1))
-        else:
-            logging.warning('Error loading the mask')
-            return None
-        return bin_mask
-
-    def join_binned(self,binsize=16,header_again=False):
-        """Method to put together mask and data. To not mess with combining
-        data from mask and image (averaging borders with data), both of them
-        will be processed separately and then joined
-        Inputs:
-        - data
-        - mask
-        - binsize: if is an integer, use square bin, if a tuple, use its
-        dimension
-        """
-        if isinstance(binsize,(int,long)):
-            binsize = (binsize,binsize)
-        elif (isinstance(binsize,tuple)) and (len(binsize)==2):
-            binsize = binsize
-        else:
-            logging.warning("Binning: dim must be either 1 or 2 integers")
-            exit(1)
-
-        #the mask
-        #as mask is a binary-valued object, nearest neighbor interpolation is
-        #the selected algorithm
-        s_mask = Mimic().get_mask(binsize)
-
-        #the feature data
-        #the input focal plane image will be already in the new dimensions,
-        #to save computational time
-        if False:
-            mvar = Mimic().feature_multivariate(s_mask.shape)
-            aux_min = np.min(mvar)
-            mvar[s_mask.astype(bool)] = -1
-        if False:
-            feat1 = Mimic().feature1(s_mask.shape)
-            aux_min = np.min(feat1)
-            feat1[s_mask.astype(bool)] = -1
-        if False:
-            feat2 = Mimic().feature2(s_mask.shape)
-            aux_min = np.min(feat2)
-            feat2[s_mask.astype(bool)] = -1
-        if False:
-            feat3 = Mimic().feature3(s_mask.shape)
-            aux_min = np.min(feat3)
-            feat3[s_mask.astype(bool)] = -1
-            #checking by plot
-            im = plt.imshow(feat3,cmap='viridis',interpolation=None,
-                        origin='lower',vmin=aux_min)
-            plt.colorbar(im)
-            plt.show()
-        return True
-
-    def ccd_mask(self,header_again=False,edge=15,mask_again=True):
+    def ccd_mask(self,header_again=False,edge=15,mask_again=False,
+                exclude=[31]):
         '''Method to construct a mask, using the dimensions and positions
         of the CCDs. Converts it to sparse matrix, to save to disk: this
         is about 100 times lighter than normal numpy arrays (215 Mb vs 20 Gb)
         Inputs:
-        - again: whether to make do again the FITS header compilation of
+        - header_again: whether to make do again the FITS header compilation of
         CCD dimensions/borders
         - edge: number of pixels to be removed from the edge of each CCD
-        - mask_again: wether to use the header info again to construct the
-        FP mask again
+        - mask_again: wether to use the header info stored in the NPZ sparse
+        matrix file, to re-construct the FP mask
+        - exclude: list containig science ccdnum to be excluded from the mask
+        Outputs:
+        - sparse BSR matrix converted to dense array
         '''
         o1 = "ccd_mask_bsr.npz"
         if mask_again:
@@ -285,16 +116,18 @@ class Mimic(): #(CCD_position):
             d1,d2 = np.ptp(n1),np.ptp(n2)
             arr = np.ones((d1,d2))
             for ccd in ccd_dim:
-                arr[ccd[1]-min(n1)-1+edge:ccd[2]-min(n1)-edge,
-                    ccd[3]-min(n2)-1+edge:ccd[4]-min(n2)-edge] = 0
+                if ccd[0] not in exclude:
+                    arr[ccd[1]-min(n1)-1+edge:ccd[2]-min(n1)-edge,
+                        ccd[3]-min(n2)-1+edge:ccd[4]-min(n2)-edge] = 0
             #convert to sparse matrix
             bsr_arr = sparse.bsr_matrix(arr)
             sparse.save_npz(o1,bsr_arr)
         else:
             #load bsr matrix
             bsr_arr = sparse.load_npz(o1)
-            if not isinstance(bsr_arr,np.ndarray):
-                bsr_arr = bsr_arr.toarray()
+        #transform to dense array
+        if not isinstance(bsr_arr,np.ndarray):
+            bsr_arr = bsr_arr.toarray()
         return bsr_arr
 
     def scale_mask(self,base,target_dim):
@@ -305,6 +138,8 @@ class Mimic(): #(CCD_position):
         Inputs:
         - base: array to be redimensioned
         - target_dim: tuple with the dimensions of the target array
+        Outputs:
+        - redimensioned array
         '''
         #coordinates of the base mask
         x,y = np.arange(0,base.shape[1]),np.arange(0,base.shape[0])
@@ -341,6 +176,215 @@ class Mimic(): #(CCD_position):
         intObj = None
         return Maux
 
+    def get_mask(self,binsize,mask_again=False,header_again=False,
+                exclude=[31]):
+        '''Method to return the mask for the selected binning. A copy of
+        the mask at resolution 16x16 is stored to speed up the loading.
+        If other binsize is given, the mask will be recalculated.
+        If the parameter mask_again is True, the mask will be computed from
+        the header information
+        The mask has 1 for outside region and 0 for inside CCDs
+        Inputs:
+        - binsize: tuple of 2 elements, giving the shape of the used bin
+        - mask_again: wether to recalculate the mask from the header
+        information, stored in ccd_dim.pickle, regardless the same binning
+        may be used. If False, a stored mask of binning 16x16 will be loaded.
+        - header_again: wether to recalculate the mask, reading again the
+        header information and re-writting ccd_dim.pickle.
+        - exclude: list of ccdnums to be excluded in the call of ccd_mask()
+        method
+        Outputs:
+        - 2D array of 1/0 being the mask, which size defined by the binning
+        '''
+        if (binsize == (16,16) and not mask_again):
+            bin_mask = np.load('s_mask_b{0}{1}.npy'.format(*binsize))
+        elif (binsize != (16,16) and not mask_again):
+            mask = Mimic().ccd_mask(mask_again=mask_again,
+                                header_again=header_again)
+            x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
+            x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
+            bin_mask = Mimic().scale_mask(mask,(x0,x1))
+            np.save('s_mask_b{0}{1}.npy'.format(*binsize),bin_mask)
+        elif mask_again:
+            mask = Mimic().ccd_mask(mask_again=mask_again,
+                                header_again=header_again)
+            x0 = np.round(mask.shape[0]/np.float(binsize[0])).astype(int)
+            x1 = np.round(mask.shape[1]/np.float(binsize[1])).astype(int)
+            bin_mask = Mimic().scale_mask(mask,(x0,x1))
+            np.save('s_mask_b{0}{1}.npy'.format(*binsize),bin_mask)
+        else:
+            logging.warning('Error loading the mask')
+            return None
+        return bin_mask
+
+    def gauss2d(self,x1,x2,mu_x1,mu_x2,sigma_x1,sigma_x2):
+        '''Method returns a 2D Gaussian, based in given vectors, means
+        and standard deviations.
+        Inputs:
+        - x1,x2: 1D arrays to be used to define the meshgrid for which the
+        Gaussian will be calculated.
+        - mu_x1, mu_x2: float, means of both axis for which the Gaussian is
+        defined
+        - sigma_x1,sigma_x2: standard deviations for both the axis
+        Outputs:
+        - 2D array with the Gaussian profile
+        '''
+        x1,x2 = np.meshgrid(x1,x2)
+        f1 = np.exp(-0.5*np.power((x1-mu_x1)/sigma_x1,2))
+        f2 = np.exp(-0.5*np.power((x2-mu_x2)/sigma_x2,2))
+        f = f1*f2/(2.*np.pi*sigma_x1*sigma_x2)
+        return f
+
+    def feature_multivariate(self,dim):
+        '''Method to construct a test multivariate random feature. The seed is
+        given so the result will be consistent between runs.
+        I tuned the parameters to give an illumination pattern with a peak in a
+        corner and two lower peaks along an edge
+        After the multivariate sampling, a Gaussina filter is applied. Is the
+        combination of this two methods who give the result.
+        Inputs:
+        - dim: fimensions of the binned focal plane
+        Outputs:
+        - a 2D array of the feature, with lower value being zero
+        '''
+        data = np.ones(dim)
+        x0,x1 = dim
+        mean = [x0/4,x1/3]
+        cov = [[x0/16,0],[0,x1/2]]
+        np.random.seed(20170425)
+        #check the outputs from multivariate_normal, not sure about the meaning
+        mvar = np.random.multivariate_normal(mean,cov,data.shape)
+        data += mvar[:,:,0]
+        data += mvar[:,:,1]
+        aux = scipy.ndimage.filters.gaussian_filter(
+            data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
+        aux += np.abs(np.min(aux))
+        return aux
+
+    def feature1(self,dim):
+        '''Feature-1, 2D gaussian, large pattern, vertical on the edge.
+        Parameters were tunned by hand.
+        Remember FWHM ~ 2.3548 sigma
+        Inputs:
+        - dim: dimensions of the binned focal plane
+        Outputs:
+        - 2D array with the feature
+        '''
+        y1,y2 = np.arange(0,dim[1]),np.arange(0,dim[0])
+        #centers for the Gaussians
+        mean_y1,mean_y2 = 0.5*dim[1],1.05*dim[0]
+        #standard deviations for the distribution
+        sigma_y1,sigma_y2 = dim[1]/2.35,0.8*dim[0]/2.35
+        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        return data
+
+    def feature2(self,dim):
+        '''Feature-1, 2D gaussian, large pattern, rotated in 45 deg, maximum
+        at the corner. To create this feature, a bigger array was defined, a
+        Gaussian was included and then rotated. The returned array is a
+        subsample of the original rotated, picked from the lower center.
+        Parameters were tunned by hand.
+        Remember FWHM ~ 2.3548 sigma
+        Inputs:
+        - dim: dimensions of the binned FP
+        Outputs:
+        - 2D array with the feature
+        '''
+        d0,d1 = 3*dim[0],3*dim[1]
+        y1,y2 = np.arange(0,d1),np.arange(0,d0)
+        #centers for the Gaussians
+        mean_y1,mean_y2 = d1/5.,d0/3.
+        #standard deviations for the distribution
+        sigma_y1,sigma_y2 = .4*d1/2.35,2.*d0/2.35
+        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        #rotate
+        r_data = scipy.ndimage.interpolation.rotate(data,angle=-45.,axes=(1,0),
+                                                    reshape=False,order=3,
+                                                    mode='constant')
+        return r_data[d1/3:d1/3+dim[1],d0/3:d0/3+dim[0]]
+
+    def feature3(self,dim):
+        '''Feature-1, 2D gaussian, 4 spots at the corners. The feature was
+        constructed by adding Gaussians at the corners, one by one. Then, the
+        last Gaussian probably has higher values, given the residuals of the
+        previous ones. Parameters were tunned by hand.
+        Remember FWHM ~ 2.3548 sigma
+        Inputs:
+        - dim: dimensions of the binned focal plane
+        Output:
+        - 2D array with the multiple features
+        '''
+        y1,y2 = np.arange(0,dim[1]),np.arange(0,dim[0])
+        sigma_y1,sigma_y2 = 0.4*dim[1]/2.35,0.4*dim[0]/2.35
+        #corner 1
+        mean_y1,mean_y2 = 0*dim[1],0*dim[0]
+        data = Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        #corner 2
+        mean_y1,mean_y2 = 0*dim[1],dim[0]
+        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        #corner 3
+        mean_y1,mean_y2 = dim[1],0*dim[0]
+        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        #corner 4
+        mean_y1,mean_y2 = dim[1],dim[0]
+        data += Mimic().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
+        return data
+
+    def join_binned(self,binsize=16,header_again=False,mask_again=False,
+                exclude=[31]):
+        """Method to put together mask and data. To not mess with combining
+        data from mask and image (averaging borders with data), both of them
+        will be processed separately and then joined. Each feature will be
+        saved in a separate numpy file
+        Inputs:
+        - binsize: if is an integer, use square bin, if a tuple, use its
+        dimension
+        - mask_again: wether to recalculate the mask from the header
+        information, stored in ccd_dim.pickle, regardless the same binning
+        may be used. If False, a stored mask of binning 16x16 will be loaded.
+        - header_again: wether to recalculate the mask, reading again the
+        header information and re-writting ccd_dim.pickle.
+        - exclude: list of ccdnums to be excluded in the call of ccd_mask()
+        Outputs:
+        - none, it saves on files the features, with the applied mask
+        """
+        if isinstance(binsize,(int,long)):
+            binsize = (binsize,binsize)
+        elif (isinstance(binsize,tuple)) and (len(binsize)==2):
+            binsize = binsize
+        else:
+            logging.warning("Binning: dim must be either 1 or 2 integers")
+            exit(1)
+        #the mask
+        #as mask is a binary-valued object, nearest neighbor interpolation is
+        #the selected algorithm
+        s_mask = Mimic().get_mask(binsize,header_again=header_again,
+                                mask_again=mask_again)
+        #the feature data
+        #the input focal plane image will be already in the new dimensions,
+        #to save computational time
+        if False:
+            mvar = Mimic().feature_multivariate(s_mask.shape)
+            aux_min = np.min(mvar)
+            mvar[s_mask.astype(bool)] = -1
+        if False:
+            feat1 = Mimic().feature1(s_mask.shape)
+            aux_min = np.min(feat1)
+            feat1[s_mask.astype(bool)] = -1
+        if False:
+            feat2 = Mimic().feature2(s_mask.shape)
+            aux_min = np.min(feat2)
+            feat2[s_mask.astype(bool)] = -1
+        if True:
+            feat3 = Mimic().feature3(s_mask.shape)
+            aux_min = np.min(feat3)
+            feat3[s_mask.astype(bool)] = -1
+            #checking by plot
+            im = plt.imshow(feat3,cmap='viridis',interpolation='none',
+                        origin='upper',vmin=aux_min)
+            plt.colorbar(im)
+            plt.show()
+        return True
 
 
 if __name__=='__main__':
