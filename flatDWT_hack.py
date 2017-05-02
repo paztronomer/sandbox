@@ -36,47 +36,6 @@ class Toolbox():
     '''methods to be inserted in other
     '''
     @classmethod
-    def detect_outlier(cls,imlayer):
-        ''' Estimate Iglewicz and Hoaglin criteria for outlier
-        and replace by NaN
-        http://www.itl.nist.gov/div898/handbook/eda/section3/eda35h.htm
-        Formula:
-        Z=0.6745(x_i - median(x)) / MAD
-        if abs(z) > 3.5, x_i is a potential outlier
-        Boris Iglewicz and David Hoaglin (1993), "Volume 16: How to Detect and
-        Handle Outliers", The ASQC Basic References in Quality Control:
-        Statistical Techniques, Edward F. Mykytka, Ph.D., Editor.
-        '''
-        #from statsmodels.robust import scale #alternative mad calculation
-        from scipy.stats import norm
-        '''Percent point function (inverse of cdf -- percentiles) of a normal
-        continous random variable
-        '''
-        cte = norm.ppf(0.75) #aprox 0.6745
-        '''Flatten the image, to estimate median
-        '''
-        flat_im = imlayer.ravel()
-        #flat_im=flat_im[flat_im!=-1]#exclude '-1' values
-        MAD = np.median( np.abs( flat_im-np.median(flat_im) ) )
-        #alternative: scale.mad(flat_im, c=1, axis=0, center=np.median)
-        Zscore = cte*(flat_im-np.median(flat_im))/MAD
-        Zscore = np.abs(Zscore)
-        ''' search for outliers and if present replace by -1
-        '''
-        imlayer[np.where(np.abs(cte*(imlayer-np.median(flat_im))/MAD)>3.5)]=-1.
-        return imlayer
-        '''
-        if len(Zscore[Zscore>3.5])>0:
-            for k in range(0,imlayer.shape[0]):
-                for m in range(0,imlayer.shape[1]):
-                    if np.abs( cte*(imlayer[k,m]-np.median(flat_im))/MAD )>3.5:
-                        imlayer[k,m] = np.nan
-            return imlayer
-        else:
-            return imlayer
-        '''
-
-    @classmethod
     def range_str(cls,head_rng):
         head_rng = head_rng.strip('[').strip(']').replace(':',',').split(',')
         return map(lambda x: int(x)-1, head_rng)
@@ -167,62 +126,6 @@ class DWT():
 class Coeff(DWT):
     '''method for save results of DWT on a compressed pytables
     '''
-    @classmethod
-    def old_set_table(cls,dwt_res,table_name=None,guess_rows=8,
-                    label='',title=''):
-        '''Method for initialize the file to be filled with the results from
-        the DWT decomposition.
-        Descriptions for pytables taken from "Numerical Python: A practical
-        techniques approach for Industry"
-        '''
-        if table_name is None:
-            table_name = 'pid{0}.table'.format(os.getpid())
-        #create a new pytable HDF5 file handle. This does not represents the
-        #root group. To access the root node must use cls.h5file.root
-        cls.h5file = tables.open_file(
-            table_name,
-            mode='w',
-            title='HDF5 table for DWT',
-            driver='H5FD_CORE')
-        #create groups of the file handle object. Args are: path to the parent
-        #group (/), the group name, and optionally a title for the group. The
-        #last is a descriptive attribute can be set to the group.
-        group = cls.h5file.create_group(
-            '/',
-            'dflat',
-            title='Dome Flat Analysis')
-        #the file handle is defined, also the group inside it. Under the group
-        #we will save the DWT tables.
-
-        #to create a table with mixed type structure we create a class that
-        #inherits from tables.IsDescription class, or we can create from a
-        #dictionary, ndarray, among others.
-        #See http://www.pytables.org/usersguide/libref/
-        #file_class.html#tables.File.create_table
-        #If use a ndarray, the created table only assumes the data type, not
-        #the shape
-        #Mind the structure: [(cA,(cH,cV,cD)),(cA,(cH,cV,cD)),...]
-        dt = []
-        for idx,i in enumerate(dwt_res):
-            dt.append(('coeff{0}'.format(idx+1),'f8'))
-            if idx == 0:
-                aux = i[0]
-            else:
-                aux = np.dstack((aux,i[0]))
-        aux = np.array(aux,dtype=dt)
-        #with the table structure already defined, the table with DWT results
-        #can be fully created. Args are: a group object or the path to the root
-        #node, the table name, the table structure specification, and
-        #optionally the table title. The last is stored as attribute.
-        cls.cml_table = cls.h5file.create_table(
-            group,
-            label,
-            description=aux,
-            title=title,
-            expectedrows=guess_rows)
-        #cls.h5file.flush()
-        #https://groups.google.com/forum/#!topic/pytables-users/EqxD5zHroc8
-
     @classmethod
     def set_table(cls,dwt_res,table_name=None,guess_rows=8,label='',
                     title=''):
@@ -370,34 +273,3 @@ if __name__=='__main__':
                 elif len(pywt.wavelist(wv_n)) > 1:
                     for wv_sub in pywt.wavelist(wv_n):
                         doit = Caller(fn,wv_sub)
-
-
-    exit(0)
-
-    '''For testing on the DWT perform'''
-    #for binning of 64x64 the maximum level in wavedec2 is 2
-    #for binning of 32x32 the maximum level in wavedec2 is 3
-    #for binning of 16x16 the maximum level in wavedec2 is 4
-    #for binning of 8x8 the maximum level in wavedec2 is 5
-    #for binning of 4x4 the maximum level in wavedec2 is 6
-
-    """
-    t1 =  time.time()
-    c1_ml = DWT.dec_mlevel(bin_fp)
-    print time.time()-t1
-    t2 = time.time()
-    c2_ml = DWT.undec_mlevel(bin_fp,wvfunction=wvmother)
-    print time.time()-t2
-    """
-    #pickle.dump(c2_ml,open('coeff.pickle','w+'))
-    coeff = pickle.load(open('coeff.pickle','r'))
-
-    Coeff.set_table(coeff,table_name='test.table',label='b3232',
-                title='DWT type: {0}'.format(wvmother))
-    '''fill the table'''
-    d = dict()
-    d['module'] = 'PyWavelets v{0}'.format(pywt.__version__)
-    d['wavelet'] = wvmother
-    d['time'] = time.ctime()
-    Coeff.fill_table(coeff,info_table=d)
-    Coeff.close_table()
