@@ -127,8 +127,8 @@ class Coeff(DWT):
     '''method for save results of DWT on a compressed pytables
     '''
     @classmethod
-    def set_table(cls,dwt_res,table_name=None,guess_rows=8,label='',
-                    title=''):
+    def set_table(cls,dwt_res,outname=None,guess_rows=8,
+                table_name='table',title=''):
         '''Method for initialize the file to be filled with the results from
         the DWT decomposition.
         Descriptions for pytables taken from "Numerical Python: A practical
@@ -139,7 +139,7 @@ class Coeff(DWT):
         #create a new pytable HDF5 file handle. This does not represents the
         #root group. To access the root node must use cls.h5file.root
         cls.h5file = tables.open_file(
-            table_name,
+            outname,
             mode='w',
             title='HDF5 table for DWT',
             driver='H5FD_CORE')
@@ -172,7 +172,7 @@ class Coeff(DWT):
         #optionally the table title. The last is stored as attribute.
         cls.cml_table = cls.h5file.create_table(
             group,
-            label,
+            table_name,
             description=diccio,
             title=title,
             expectedrows=guess_rows)
@@ -207,6 +207,7 @@ class Coeff(DWT):
         Coeff.cml_table.flush()
         Coeff.h5file.close()
 
+
 class Caller(Coeff):
     """Class inherites from Coeff, which inherites from DWT
     """
@@ -230,8 +231,8 @@ class Caller(Coeff):
         res = DWT.undec_mlevel(bin_fp,wvfunction=wvmother)
         #setup the table to harbor results
         Coeff.set_table(res,
-                    table_name=out_name,
-                    label='fpazch_at_illinois_dot_edu',
+                    outname=out_name,
+                    table_name=wvmother,
                     title='DWT type: {0}'.format(wvmother))
         #fill the table
         d = dict()
@@ -252,10 +253,8 @@ if __name__=='__main__':
     #campus cluster precal nodes or macbook
     if socket.gethostname() in ['ccc0027','ccc0028','ccc0029']:
         npy_folder = 'scratch/dwt_files'
-    elif  socket.gethostname() in ['albatross.local']:
-        npy_folder = 'Code/des_calibrations/dwt_files'
     else:
-        logging.warning('Need to define the location of Binned FP')
+        npy_folder = 'Code/des_calibrations/dwt_files'
 
     path = os.path.join(os.path.expanduser('~'),npy_folder)
     fn = lambda s: os.path.join(path,s)
@@ -263,8 +262,13 @@ if __name__=='__main__':
     #wvmother = ['dmey','morl','cmor','shan','gaus','mexh','haar']
     wvmother = ['dmey','haar']
 
+    #to retrict the depth to be walked!
+    DEPTH = 0
     for root,dirs,files in os.walk(path):
-        FPname = [fn(binned) for binned in files if ('.npy' in binned)]
+        if root.count(os.sep) >= DEPTH:
+            del dirs[:]
+        FPname = [fn(binned) for binned in files if (('.npy' in binned) and
+                ('b44' not in binned))]
         '''below can be replaced by a map()'''
         for fn in FPname:
             for wv_n in wvmother:
