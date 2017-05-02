@@ -420,7 +420,7 @@ class Mimic(): #(CCD_position):
             np.save(fn('feat1_b{0}{1}.npy'.format(*binsize)),mvar)
             np.save(fn('feat2_b{0}{1}.npy'.format(*binsize)),mvar)
             np.save(fn('feat3_b{0}{1}.npy'.format(*binsize)),mvar)
-        if True:
+        if False:
             #checking by plot
             im = plt.imshow(feat3,cmap='viridis',interpolation='none',
                         origin='upper',vmin=aux_min3)
@@ -432,4 +432,4 @@ class Mimic(): #(CCD_position):
 
 if __name__=='__main__':
     #pos = CCD_position()
-    Mimic().join_binned(binsize=4)
+    Mimic().join_binned(binsize=64)

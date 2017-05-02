@@ -21,6 +21,8 @@ import os
 import sys
 import time
 import pickle
+import logging
+import socket
 import numpy as np
 import scipy.stats
 import scipy.signal
@@ -87,9 +89,22 @@ class Toolbox():
         if not os.path.exists(folder):
             try:
                 os.makedirs(folder)
+                logging.info('Creating directory {0}'.format(folder))
             except:
-                logging("Issue cueatring the folder {0}".format(folder))
+                logging.info("Issue creating the folder {0}".format(folder))
+        else:
+            logging.info('Checking: directory {0} exists'.format(folder))
         return True
+
+    @classmethod
+    def split_path(cls,path):
+        '''Method to return the relative root folder (one level upper),
+        given a path.
+        '''
+        #relat_root = os.path.abspath(os.path.join(path,os.pardir))
+        relroot,filename = os.path.split(path)
+        return relroot,filename
+
 
 class FPBinned():
     def __init__(self,folder,fits):
@@ -153,16 +168,19 @@ class Coeff(DWT):
     '''method for save results of DWT on a compressed pytables
     '''
     @classmethod
-    def set_table(cls,dwt_res,tablename,guess_rows=4,label='',title=''):
+    def old_set_table(cls,dwt_res,table_name=None,guess_rows=8,
+                    label='',title=''):
         '''Method for initialize the file to be filled with the results from
         the DWT decomposition.
         Descriptions for pytables taken from "Numerical Python: A practical
         techniques approach for Industry"
         '''
+        if table_name is None:
+            table_name = 'pid{0}.table'.format(os.getpid())
         #create a new pytable HDF5 file handle. This does not represents the
         #root group. To access the root node must use cls.h5file.root
         cls.h5file = tables.open_file(
-            tablename,
+            table_name,
             mode='w',
             title='HDF5 table for DWT',
             driver='H5FD_CORE')
@@ -181,7 +199,8 @@ class Coeff(DWT):
         #dictionary, ndarray, among others.
         #See http://www.pytables.org/usersguide/libref/
         #file_class.html#tables.File.create_table
-        #To initialize the table, will use a structurred array
+        #If use a ndarray, the created table only assumes the data type, not
+        #the shape
         #Mind the structure: [(cA,(cH,cV,cD)),(cA,(cH,cV,cD)),...]
         dt = []
         for idx,i in enumerate(dwt_res):
@@ -199,53 +218,160 @@ class Coeff(DWT):
             group,
             label,
             description=aux,
-            title=title)
+            title=title,
+            expectedrows=guess_rows)
         #cls.h5file.flush()
         #https://groups.google.com/forum/#!topic/pytables-users/EqxD5zHroc8
 
     @classmethod
-    def fill_table(cls,coeff_tuple,Nlev,dict_database):
-        '''Method to fill the HDF5 file with the DWT results. It works for 2
-        and 8 levels of decomposition.
+    def set_table(cls,dwt_res,table_name=None,guess_rows=8,label='',
+                    title=''):
+        '''Method for initialize the file to be filled with the results from
+        the DWT decomposition.
+        Descriptions for pytables taken from "Numerical Python: A practical
+        techniques approach for Industry"
+        '''
+        if table_name is None:
+            table_name = 'pid{0}.table'.format(os.getpid())
+        #create a new pytable HDF5 file handle. This does not represents the
+        #root group. To access the root node must use cls.h5file.root
+        cls.h5file = tables.open_file(
+            table_name,
+            mode='w',
+            title='HDF5 table for DWT',
+            driver='H5FD_CORE')
+        #create groups of the file handle object. Args are: path to the parent
+        #group (/), the group name, and optionally a title for the group. The
+        #last is a descriptive attribute can be set to the group.
+        group = cls.h5file.create_group(
+            '/',
+            'dflat',
+            title='Dome Flat Analysis')
+        #the file handle is defined, also the group inside it. Under the group
+        #we will save the DWT tables.
+
+        #to create a table with mixed type structure we create a class that
+        #inherits from tables.IsDescription class, or we can create from a
+        #dictionary, ndarray, among others.
+        #See http://www.pytables.org/usersguide/libref/
+        #file_class.html#tables.File.create_table
+
+        #Will use a dictionary, to setup columns in native Col()
+        #Mind the structure: [(cA,(cH,cV,cD)),(cA,(cH,cV,cD)),...]
+        diccio = dict()
+        for i in xrange(len(dwt_res)):
+            coeff = 'coeff{0}'.format(i+1)
+            diccio[coeff] = tables.FloatCol(shape=dwt_res[i][0].shape)
+
+        #with the table structure already defined, the table with DWT results
+        #can be fully created. Args are: a group object or the path to the root
+        #node, the table name, the table structure specification, and
+        #optionally the table title. The last is stored as attribute.
+        cls.cml_table = cls.h5file.create_table(
+            group,
+            label,
+            description=diccio,
+            title=title,
+            expectedrows=guess_rows)
+        #cls.h5file.flush()
+        #https://groups.google.com/forum/#!topic/pytables-users/EqxD5zHroc8
+
+    @classmethod
+    def fill_table(cls,dwt_res,info_table={}):
+        '''Method to fill the HDF5 file with the DWT results
         '''
         #using .attrs or ._v_attrs we can access different levels in the
         #HDF5 structure
-        cls.cml_table.attrs.DB_INFO = dict_database
+        cls.cml_table.attrs.DB_INFO = info_table
         cml_row = Coeff.cml_table.row
-        if Nlev == 2:
-            for m in xrange(3):
-                cml_row['c_A'] = coeff_tuple[0]
-                cml_row['c1'] = coeff_tuple[1][m]
-                cml_row['c2'] = coeff_tuple[2][m]
-                cml_row.append()
-                Coeff.cml_table.flush()
-        elif Nlev == 8:
-            for m in xrange(3):
-                cml_row['c_A'] = coeff_tuple[0]
-                cml_row['c1'] = coeff_tuple[1][m]
-                cml_row['c2'] = coeff_tuple[2][m]
-                cml_row['c3'] = coeff_tuple[3][m]
-                cml_row['c4'] = coeff_tuple[4][m]
-                cml_row['c5'] = coeff_tuple[5][m]
-                cml_row['c6'] = coeff_tuple[6][m]
-                cml_row['c7'] = coeff_tuple[7][m]
-                cml_row['c8'] = coeff_tuple[8][m]
-                cml_row.append()
-                Coeff.cml_table.flush()
-        else:
-            raise ValueError('Method supports 2 or 8 decomposition levels.')
+        #fill row by row, using the first level as template. Beforehand we
+        #know every level of decmposition will has the following setup:
+        #(cA,(cH,cV,cD))
+        for lev in xrange(len(dwt_res)):
+            decomp = dwt_res[lev]
+            cml_row['coeff{0}'.format(lev+1)] = decomp[0]
+            cml_row.append()
+            cml_row['coeff{0}'.format(lev+1)] = decomp[1][0]
+            cml_row.append()
+            cml_row['coeff{0}'.format(lev+1)] = decomp[1][1]
+            cml_row.append()
+            cml_row['coeff{0}'.format(lev+1)] = decomp[1][2]
+            cml_row.append()
+            Coeff.cml_table.flush()
 
     @classmethod
     def close_table(cls):
         Coeff.cml_table.flush()
         Coeff.h5file.close()
 
+class Caller(Coeff):
+    """Class inherites from Coeff, which inherites from DWT
+    """
+    def __init__(self,fname,wvmother):
+        t0 =  time.time()
+        root,npyfile = Toolbox.split_path(fname)
+        info = 'Working on {0}. {1}'.format(npyfile,time.ctime())
+        info += '\n\t(*)Wavelet: {0}'.format(wvmother)
+        print info
+        logging.info(info)
+        #load the binned focal plane
+        bin_fp = np.load(fname)
+        #for each mother wavelet, save in a different folder
+        out_folder = os.path.join(root,wvmother)
+        #check if the folder exists, if not, crete it
+        Toolbox.check_folder(out_folder)
+        #setup the output name
+        out_name = '{0}_{1}.h5'.format(wvmother,npyfile[:npyfile.find('.npy')])
+        out_name = os.path.join(out_folder,out_name)
+        #perform the DWT
+        res = DWT.undec_mlevel(bin_fp,wvfunction=wvmother)
+        #setup the table to harbor results
+        Coeff.set_table(res,
+                    table_name=out_name,
+                    label='fpazch_at_illinois_dot_edu',
+                    title='DWT type: {0}'.format(wvmother))
+        #fill the table
+        d = dict()
+        d['module'] = 'PyWavelets v{0}'.format(pywt.__version__)
+        d['wavelet'] = wvmother
+        d['time'] = time.ctime()
+        Coeff.fill_table(res,info_table=d)
+        #close the file
+        Coeff.close_table()
+        t1 = time.time()
+        info_end = 'Ended with {0}. Elapsed: {1:.3f} sec'.format(npyfile,t1-t0)
+        print info_end
+        logging.info(info_end)
+
 
 if __name__=='__main__':
-    path = os.path.join(os.path.expanduser('~'),
-                    'Code/des_calibrations/dwt_test_files')
+    #directory setup
+    #campus cluster precal nodes
+    if socket.gethostname() in ['ccc0027','ccc0028','ccc0029']:
+        npy_folder = 'dwt_files'
+    elif  socket.gethostname() in ['albatross.local']:
+        npy_folder = 'Code/des_calibrations/dwt_test_files'
+    else:
+        logging.warning('Need to define the location of Binned FP')
+
+    path = os.path.join(os.path.expanduser('~'),npy_folder)
     fn = lambda s: os.path.join(path,s)
-    bin_fp = np.load(fn('feat2_b3232.npy'))
+    #wavelet library setup
+    wvmother = ['dmey','morl','cmor','shan','gaus','mexh','haar']
+
+    for root,dirs,files in os.walk(path):
+        FPname = [fn(binned) for binned in files if ('.npy' in binned)]
+        '''below can be replaced by a map()'''
+        for fn in FPname:
+            for wv_n in wvmother:
+                if len(pywt.wavelist(wv_n)) == 1:
+                    doit = Caller(fn,wv_n)
+                elif len(pywt.wavelist(wv_n)) > 1:
+                    for wv_sub in pywt.wavelist(wv_n):
+                        doit = Caller(fn,wv_sub)
+
+
+    exit(0)
 
     '''For testing on the DWT perform'''
     #for binning of 64x64 the maximum level in wavedec2 is 2
@@ -253,8 +379,7 @@ if __name__=='__main__':
     #for binning of 16x16 the maximum level in wavedec2 is 4
     #for binning of 8x8 the maximum level in wavedec2 is 5
     #for binning of 4x4 the maximum level in wavedec2 is 6
-    #testing...
-    wvmother = 'dmey'
+
     """
     t1 =  time.time()
     c1_ml = DWT.dec_mlevel(bin_fp)
@@ -266,20 +391,12 @@ if __name__=='__main__':
     #pickle.dump(c2_ml,open('coeff.pickle','w+'))
     coeff = pickle.load(open('coeff.pickle','r'))
 
-    '''To test on the table creation'''
-    Coeff.set_table(coeff,'test.table',label='b3232',
+    Coeff.set_table(coeff,table_name='test.table',label='b3232',
                 title='DWT type: {0}'.format(wvmother))
-
-    exit()
-
-    '''Coeff.set_table(fnout,decLev)
-    #fill table
-    Coeff.fill_table(c_ml,decLev,binfo)
-    #close table
+    '''fill the table'''
+    d = dict()
+    d['module'] = 'PyWavelets v{0}'.format(pywt.__version__)
+    d['wavelet'] = wvmother
+    d['time'] = time.ctime()
+    Coeff.fill_table(coeff,info_table=d)
     Coeff.close_table()
-    count += 1
-    t2 = time.time()
-    if not count%10:
-        print '\n{2}--{1},read+multilevel+store: {0:.2f}\'\''.format(
-            t2-t1,dflat_tab['filename'][k],count)
-    '''
