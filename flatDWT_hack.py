@@ -310,7 +310,7 @@ class Caller(Coeff):
     def __init__(self,fname,wvmother):
         t0 =  time.time()
         root,npyfile = Toolbox.split_path(fname)
-        info = 'Working on {0}. {1}'.format(npyfile,time.ctime())
+        info = '\nWorking on {0}. {1}'.format(npyfile,time.ctime())
         info += '\n\t(*)Wavelet: {0}'.format(wvmother)
         print info
         logging.info(info)
@@ -346,18 +346,19 @@ class Caller(Coeff):
 
 if __name__=='__main__':
     #directory setup
-    #campus cluster precal nodes
+    #campus cluster precal nodes or macbook
     if socket.gethostname() in ['ccc0027','ccc0028','ccc0029']:
-        npy_folder = 'dwt_files'
+        npy_folder = 'scratch/dwt_files'
     elif  socket.gethostname() in ['albatross.local']:
-        npy_folder = 'Code/des_calibrations/dwt_test_files'
+        npy_folder = 'Code/des_calibrations/dwt_files'
     else:
         logging.warning('Need to define the location of Binned FP')
 
     path = os.path.join(os.path.expanduser('~'),npy_folder)
     fn = lambda s: os.path.join(path,s)
     #wavelet library setup
-    wvmother = ['dmey','morl','cmor','shan','gaus','mexh','haar']
+    #wvmother = ['dmey','morl','cmor','shan','gaus','mexh','haar']
+    wvmother = ['dmey','haar']
 
     for root,dirs,files in os.walk(path):
         FPname = [fn(binned) for binned in files if ('.npy' in binned)]
