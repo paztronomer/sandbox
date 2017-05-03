@@ -1,4 +1,4 @@
-'''flatDWT
+"""flatDWT
 Created: September 29, 2016
 
 This script must be able to detect if a flat is acceptable inmediatly after
@@ -16,7 +16,7 @@ STEPS:
 HACK version
 Date: April 26, 2017
 this version was modified to be performed on the simulated dome flat features
-'''
+"""
 import os
 import sys
 import time
@@ -33,33 +33,33 @@ import pywt
 import tables
 
 class Toolbox():
-    '''methods to be inserted in other
-    '''
+    """methods to be inserted in other
+    """
     @classmethod
     def range_str(cls,head_rng):
-        head_rng = head_rng.strip('[').strip(']').replace(':',',').split(',')
+        head_rng = head_rng.strip("[").strip("]").replace(":",",").split(",")
         return map(lambda x: int(x)-1, head_rng)
 
     @classmethod
     def check_folder(cls,folder):
-        '''Method to check for the folder existence, if not present, tries to
+        """Method to check for the folder existence, if not present, tries to
         crete it
-        '''
+        """
         if not os.path.exists(folder):
             try:
                 os.makedirs(folder)
-                logging.info('Creating directory {0}'.format(folder))
+                logging.info("Creating directory {0}".format(folder))
             except:
                 logging.info("Issue creating the folder {0}".format(folder))
         else:
-            logging.info('Checking: directory {0} exists'.format(folder))
+            logging.info("Checking: directory {0} exists".format(folder))
         return True
 
     @classmethod
     def split_path(cls,path):
-        '''Method to return the relative root folder (one level upper),
+        """Method to return the relative root folder (one level upper),
         given a path.
-        '''
+        """
         #relat_root = os.path.abspath(os.path.join(path,os.pardir))
         relroot,filename = os.path.split(path)
         return relroot,filename
@@ -67,10 +67,10 @@ class Toolbox():
 
 class FPBinned():
     def __init__(self,folder,fits):
-        '''Simple method to open focal plane binned images
+        """Simple method to open focal plane binned images
         When a position not belongs to focal plane, the value is -1
         Before return it, add 1 to set outer region to zero value
-        '''
+        """
         fname = os.path.join(folder,fits)
         tmp = np.load(fname)
         #outliers must be present, because there are not removed until
@@ -81,8 +81,8 @@ class FPBinned():
 
 class DWT():
     @classmethod
-    def dec_mlevel(cls,img_arr,wvfunction='dmey',wvmode='zero',Nlev=8):
-        '''Wavelet Decomposition in multiple levels (decimated), differs to
+    def dec_mlevel(cls,img_arr,wvfunction="dmey",wvmode="zero",Nlev=8):
+        """Wavelet Decomposition in multiple levels (decimated), differs to
         DWT which is the wavelet transform of one level only
         Inputs:
         - img_arr: 2D array containing image data
@@ -92,7 +92,7 @@ class DWT():
         Outputs:
         - WAVEDEC2 output is a tuple (cA, (cH, cV, cD)) where (cH, cV, cD)
           repeats Nwv times
-        '''
+        """
         while True:
             try:
                 c_ml = pywt.wavedec2(img_arr,pywt.Wavelet(wvfunction),
@@ -103,8 +103,8 @@ class DWT():
         return c_ml
 
     @classmethod
-    def undec_mlevel(cls,img_arr,wvfunction='dmey',lev_end=8):
-        '''Stationary wavelet decomposition in 2D. Undecimated.
+    def undec_mlevel(cls,img_arr,wvfunction="dmey",lev_end=8):
+        """Stationary wavelet decomposition in 2D. Undecimated.
         Inputs:
         - img_arr: 2D array
         - wvfunction: mother wavelet, string
@@ -112,7 +112,7 @@ class DWT():
         - lev_ini: initial level of decomposition. Minumum is 0
         Outputs:
         -
-        '''
+        """
         while True:
             try:
                 c_ml = pywt.swt2(img_arr,pywt.Wavelet(wvfunction),
@@ -124,32 +124,32 @@ class DWT():
 
 
 class Coeff(DWT):
-    '''method for save results of DWT on a compressed pytables
-    '''
+    """method for save results of DWT on a compressed pytables
+    """
     @classmethod
     def set_table(cls,dwt_res,outname=None,guess_rows=8,
-                table_name='table',title=''):
-        '''Method for initialize the file to be filled with the results from
+                table_name="table",title=""):
+        """Method for initialize the file to be filled with the results from
         the DWT decomposition.
         Descriptions for pytables taken from "Numerical Python: A practical
         techniques approach for Industry"
-        '''
+        """
         if table_name is None:
-            table_name = 'pid{0}.table'.format(os.getpid())
+            table_name = "pid{0}.table".format(os.getpid())
         #create a new pytable HDF5 file handle. This does not represents the
         #root group. To access the root node must use cls.h5file.root
         cls.h5file = tables.open_file(
             outname,
-            mode='w',
-            title='HDF5 table for DWT',
-            driver='H5FD_CORE')
+            mode="w",
+            title="HDF5 table for DWT",
+            driver="H5FD_CORE")
         #create groups of the file handle object. Args are: path to the parent
         #group (/), the group name, and optionally a title for the group. The
         #last is a descriptive attribute can be set to the group.
         group = cls.h5file.create_group(
-            '/',
-            'dflat',
-            title='Dome Flat Analysis')
+            "/",
+            "dflat",
+            title="Dome Flat Analysis")
         #the file handle is defined, also the group inside it. Under the group
         #we will save the DWT tables.
 
@@ -163,7 +163,7 @@ class Coeff(DWT):
         #Mind the structure: [(cA,(cH,cV,cD)),(cA,(cH,cV,cD)),...]
         diccio = dict()
         for i in xrange(len(dwt_res)):
-            coeff = 'coeff{0}'.format(i+1)
+            coeff = "coeff{0}".format(i+1)
             diccio[coeff] = tables.FloatCol(shape=dwt_res[i][0].shape)
 
         #with the table structure already defined, the table with DWT results
@@ -181,8 +181,8 @@ class Coeff(DWT):
 
     @classmethod
     def fill_table(cls,dwt_res,info_table={}):
-        '''Method to fill the HDF5 file with the DWT results
-        '''
+        """Method to fill the HDF5 file with the DWT results
+        """
         #using .attrs or ._v_attrs we can access different levels in the
         #HDF5 structure
         cls.cml_table.attrs.DB_INFO = info_table
@@ -191,14 +191,12 @@ class Coeff(DWT):
         #know every level of decmposition will has the following setup:
         #(cA,(cH,cV,cD))
         for lev in xrange(len(dwt_res)):
+            print lev
             decomp = dwt_res[lev]
-            cml_row['coeff{0}'.format(lev+1)] = decomp[0]
-            cml_row.append()
-            cml_row['coeff{0}'.format(lev+1)] = decomp[1][0]
-            cml_row.append()
-            cml_row['coeff{0}'.format(lev+1)] = decomp[1][1]
-            cml_row.append()
-            cml_row['coeff{0}'.format(lev+1)] = decomp[1][2]
+            cml_row["coeff{0}".format(lev+1)] = decomp[0]
+            cml_row["coeff{0}".format(lev+1)] = decomp[1][0]
+            cml_row["coeff{0}".format(lev+1)] = decomp[1][1]
+            cml_row["coeff{0}".format(lev+1)] = decomp[1][2]
             cml_row.append()
             Coeff.cml_table.flush()
 
@@ -214,8 +212,8 @@ class Caller(Coeff):
     def __init__(self,fname,wvmother):
         t0 =  time.time()
         root,npyfile = Toolbox.split_path(fname)
-        info = '\nWorking on {0}. {1}'.format(npyfile,time.ctime())
-        info += '\n\t(*)Wavelet: {0}'.format(wvmother)
+        info = "\nWorking on {0}. {1}".format(npyfile,time.ctime())
+        info += "\n\t(*)Wavelet: {0}".format(wvmother)
         print info
         logging.info(info)
         #load the binned focal plane
@@ -225,7 +223,7 @@ class Caller(Coeff):
         #check if the folder exists, if not, crete it
         Toolbox.check_folder(out_folder)
         #setup the output name
-        out_name = '{0}_{1}.h5'.format(wvmother,npyfile[:npyfile.find('.npy')])
+        out_name = "{0}_{1}.h5".format(wvmother,npyfile[:npyfile.find(".npy")])
         out_name = os.path.join(out_folder,out_name)
         #perform the DWT
         res = DWT.undec_mlevel(bin_fp,wvfunction=wvmother)
@@ -233,43 +231,43 @@ class Caller(Coeff):
         Coeff.set_table(res,
                     outname=out_name,
                     table_name=wvmother,
-                    title='DWT type: {0}'.format(wvmother))
+                    title="DWT type: {0}".format(wvmother))
         #fill the table
         d = dict()
-        d['module'] = 'PyWavelets v{0}'.format(pywt.__version__)
-        d['wavelet'] = wvmother
-        d['time'] = time.ctime()
+        d["module"] = "PyWavelets v{0}".format(pywt.__version__)
+        d["wavelet"] = wvmother
+        d["time"] = time.ctime()
         Coeff.fill_table(res,info_table=d)
         #close the file
         Coeff.close_table()
         t1 = time.time()
-        info_end = 'Ended with {0}. Elapsed: {1:.3f} sec'.format(npyfile,t1-t0)
+        info_end = "Ended with {0}. Elapsed: {1:.3f} sec".format(npyfile,t1-t0)
         print info_end
         logging.info(info_end)
 
 
-if __name__=='__main__':
+if __name__=="__main__":
     #directory setup
     #campus cluster precal nodes or macbook
-    if socket.gethostname() in ['ccc0027','ccc0028','ccc0029']:
-        npy_folder = 'scratch/dwt_files'
+    if socket.gethostname() in ["ccc0027","ccc0028","ccc0029"]:
+        npy_folder = "scratch/dwt_files"
     else:
-        npy_folder = 'Code/des_calibrations/dwt_files'
+        npy_folder = "Code/des_calibrations/dwt_files"
 
-    path = os.path.join(os.path.expanduser('~'),npy_folder)
+    path = os.path.join(os.path.expanduser("~"),npy_folder)
     fn = lambda s: os.path.join(path,s)
     #wavelet library setup
-    #wvmother = ['dmey','morl','cmor','shan','gaus','mexh','haar']
-    wvmother = ['dmey','haar']
+    #wvmother = ["dmey","morl","cmor","shan","gaus","mexh","haar"]
+    wvmother = ["dmey","haar"]
 
     #to retrict the depth to be walked!
     DEPTH = 0
     for root,dirs,files in os.walk(path):
         if root.count(os.sep) >= DEPTH:
             del dirs[:]
-        FPname = [fn(binned) for binned in files if (('.npy' in binned) and
-                ('b44' not in binned))]
-        '''below can be replaced by a map()'''
+        FPname = [fn(binned) for binned in files if ((".npy" in binned) and
+                ("b44" not in binned))]
+        """below can be replaced by a map()"""
         for fn in FPname:
             for wv_n in wvmother:
                 if len(pywt.wavelist(wv_n)) == 1:
