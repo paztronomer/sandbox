@@ -190,8 +190,7 @@ class Coeff(DWT):
         #fill row by row, using the first level as template. Beforehand we
         #know every level of decmposition will has the following setup:
         #(cA,(cH,cV,cD))
-        for lev in xrange(len(dwt_res)):
-            print lev
+        for lev in xrange(len(dwt_res[0][1])+1):
             decomp = dwt_res[lev]
             cml_row["coeff{0}".format(lev+1)] = decomp[0]
             cml_row["coeff{0}".format(lev+1)] = decomp[1][0]
