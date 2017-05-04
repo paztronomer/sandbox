@@ -20,6 +20,7 @@ this version was modified to be performed on the simulated dome flat features
 import os
 import sys
 import time
+import gc
 import pickle
 import logging
 import socket
@@ -163,7 +164,7 @@ class Coeff(DWT):
         #Mind the structure: [(cA,(cH,cV,cD)),(cA,(cH,cV,cD)),...]
         diccio = dict()
         for i in xrange(len(dwt_res)):
-            coeff = "coeff{0}".format(i+1)
+            coeff = "lev{0}".format(i+1)
             diccio[coeff] = tables.FloatCol(shape=dwt_res[i][0].shape)
 
         #with the table structure already defined, the table with DWT results
@@ -182,23 +183,29 @@ class Coeff(DWT):
     @classmethod
     def fill_table(cls,dwt_res,info_table={}):
         """Method to fill the HDF5 file with the DWT results
+        Inputs:
+        - dwt_res: results from DWT
+        - info_table: information in form of a dictionary, to be filled as
+        table attribute
         """
         #using .attrs or ._v_attrs we can access different levels in the
         #HDF5 structure
         cls.cml_table.attrs.DB_INFO = info_table
         cml_row = Coeff.cml_table.row
-        #fill row by row, using the first level as template. Beforehand we
-        #know every level of decmposition will has the following setup:
-        #(cA,(cH,cV,cD))
-        for lev in xrange(len(dwt_res[0][1])+1):
-            decomp = dwt_res[lev]
-            cml_row["coeff{0}".format(lev+1)] = decomp[0]
-            cml_row["coeff{0}".format(lev+1)] = decomp[1][0]
-            cml_row["coeff{0}".format(lev+1)] = decomp[1][1]
-            cml_row["coeff{0}".format(lev+1)] = decomp[1][2]
-            cml_row.append()
-            Coeff.cml_table.flush()
-
+        try:
+            #dwt_res has structure:[(cA,(cH,cV,cD)),...,(cA,(cH,cV,cD))]
+            reord = [(a,h,v,d) for (a,(h,v,d)) in dwt_res]
+            reord = zip(*reord)
+            dwt_res = None
+            #with zip, list is now: [(cA,cA,cA,...),(cH,cH,cH,...),...]
+            for cx in reord:
+                for idx,L in enumerate(Coeff.cml_table.colnames):
+                    cml_row[L] = cx[idx]
+                cml_row.append()
+                Coeff.cml_table.flush()
+        except:
+            logging.error("Error filling up the table")
+                 
     @classmethod
     def close_table(cls):
         Coeff.cml_table.flush()
@@ -209,6 +216,7 @@ class Caller(Coeff):
     """Class inherites from Coeff, which inherites from DWT
     """
     def __init__(self,fname,wvmother):
+        gc.collect()
         t0 =  time.time()
         root,npyfile = Toolbox.split_path(fname)
         info = "\nWorking on {0}. {1}".format(npyfile,time.ctime())
@@ -222,7 +230,7 @@ class Caller(Coeff):
         #check if the folder exists, if not, crete it
         Toolbox.check_folder(out_folder)
         #setup the output name
-        out_name = "{0}_{1}.h5".format(wvmother,npyfile[:npyfile.find(".npy")])
+        out_name = "TEST_{0}_{1}.h5".format(wvmother,npyfile[:npyfile.find(".npy")])
         out_name = os.path.join(out_folder,out_name)
         #perform the DWT
         res = DWT.undec_mlevel(bin_fp,wvfunction=wvmother)
@@ -265,7 +273,7 @@ if __name__=="__main__":
         if root.count(os.sep) >= DEPTH:
             del dirs[:]
         FPname = [fn(binned) for binned in files if ((".npy" in binned) and
-                ("b44" not in binned))]
+                ("b44" not in binned)) and ("b64" in binned)]
         """below can be replaced by a map()"""
         for fn in FPname:
             for wv_n in wvmother:
