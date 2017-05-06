@@ -90,7 +90,7 @@ class CCD_position():
         (ccd_dim.pickle,fp_dim.pickle)
         '''
         path = os.path.join(os.path.expanduser('~'),
-                        'Code/des_calibrations/dwt_test_files')
+                        'Code/des_calibrations/dwt_files')
         fn = lambda s: os.path.join(path,s)
         o1,o2 = fn('ccd_dim.pickle'),fn('fp_dim.pickle')
         if rerun:
@@ -140,7 +140,7 @@ class Mimic(): #(CCD_position):
         - sparse BSR matrix converted to dense array
         '''
         path = os.path.join(os.path.expanduser('~'),
-                        'Code/des_calibrations/dwt_test_files')
+                        'Code/des_calibrations/dwt_files/masks')
         fn = lambda s: os.path.join(path,s)
         o1 = fn("ccd_mask_bsr.npz")
         if mask_again:
@@ -185,6 +185,8 @@ class Mimic(): #(CCD_position):
         #coordinates of the base mask
         x,y = np.arange(0,base.shape[1]),np.arange(0,base.shape[0])
         #defines an interpolator object
+        #in the interpolator object, (y,x) must be the fixed points,
+        #coordinates over which the values are defined
         intObj = scipy.interpolate.RegularGridInterpolator((y,x),
                                                         base.astype(int))
         #principle: identity matrix scaling with different scale for x and y
@@ -192,22 +194,30 @@ class Mimic(): #(CCD_position):
         #values are outside the base/target scaling dimensions
         ratio0 = (base.shape[0]-1.)/np.float(target_dim[0]-1.)
         ratio1 = (base.shape[1]-1.)/np.float(target_dim[1]-1.)
+        #target >> expressed in the base
         #by multiplying target arrays indices by this ratios
         #will get the equivalent in the base mask dimension
         xaux,yaux = np.arange(0,target_dim[1]),np.arange(0,target_dim[0])
         xaux,yaux = ratio1*xaux,ratio0*yaux
-        #at this point, just as double check, see if the maximum value is
-        #out of bounds
-        mssg = "Scaling mask: dimensions don't match"
-        if (max(xaux) > base.shape[1]-1):
-            logging.warning(mssg+" (dim 1:{0}, {1})".format(np.max(xaux),
+        #xaux,yaux >>> are the coordinates of the target array, expressed
+        #in units belonging to the base array
+        #at this point, given differences of precission, 'float-integers' are
+        #not round numbers, so it will trigger an error in the interpolator:
+        #to solve it, I will modify by hand the last element which shows
+        #to be conflictive
+        mssg = "Dimensions doesn't match due to precission"
+        if not xaux[-1].is_integer():
+            logging.warning(mssg+" (dim 1:({0}/{1})!=1)".format(xaux[-1],
                         base.shape[1]-1))
-            xaux[-1] = (base.shape[1]-1.)
-        if (max(yaux) > base.shape[0]-1):
-            logging.warning(mssg+" (dim 0:{0}, {1})".format(np.max(yaux),
+            xaux[-1] = base.shape[1]-1
+        if not yaux[-1].is_integer():
+            logging.warning(mssg+" (dim 0:({0}/{1})!=1)".format(yaux[-1],
                         base.shape[0]-1))
-            yaux[-1] = (base.shape[0]-1.)
+            yaux[-1] = base.shape[0]-1
         #construct the grid for interpolation
+        """IMPORTANT: this is the right way to setup the meshgrid, otherwise
+        the result will be a mess on which FP is not constructed
+        xaux,yaux = np.meshgrid(xaux,yaux)"""
         xaux,yaux = np.meshgrid(xaux,yaux)
         cooaux = np.array(zip(yaux.ravel(),xaux.ravel()))
         #use nearest neighbor to find values
@@ -238,7 +248,7 @@ class Mimic(): #(CCD_position):
         - 2D array of 1/0 being the mask, which size defined by the binning
         '''
         path = os.path.join(os.path.expanduser('~'),
-                        'Code/des_calibrations/dwt_test_files')
+                        'Code/des_calibrations/dwt_files/masks')
         fn = lambda s: os.path.join(path,s)
         if (binsize == (16,16) and not mask_again):
             bin_mask = np.load(fn('s_mask_b{0}{1}.npy'.format(*binsize)))
@@ -261,15 +271,16 @@ class Mimic(): #(CCD_position):
             return None
         return bin_mask
 
-    def feature_multivariate(self,dim):
+    def feature_multivariate(self,dim,pp_ratio):
         '''Method to construct a test multivariate random feature. The seed is
         given so the result will be consistent between runs.
         I tuned the parameters to give an illumination pattern with a peak in a
         corner and two lower peaks along an edge
-        After the multivariate sampling, a Gaussina filter is applied. Is the
+        After the multivariate sampling, a Gaussian filter is applied. Is the
         combination of this two methods who give the result.
         Inputs:
         - dim: fimensions of the binned focal plane
+        - pp_ratio: desired approximate peak to peak ratio
         Outputs:
         - a 2D array of the feature, with lower value being zero
         '''
@@ -286,15 +297,16 @@ class Mimic(): #(CCD_position):
             data,sigma=(x0/10,x1/3),order=(0,3),mode='reflect')
         aux += np.abs(np.min(aux))
         avg = Toolbox().range_mean(aux,90,100)
-        aux = aux*(0.001/avg)
+        aux = aux*(pp_ratio/avg)
         return aux
 
-    def feature1(self,dim):
+    def feature1(self,dim,pp_ratio):
         '''Feature-1, 2D gaussian, large pattern, vertical on the edge.
         Parameters were tunned by hand.
         Remember FWHM ~ 2.3548 sigma
         Inputs:
         - dim: dimensions of the binned focal plane
+        - pp_ratio: desired approximate peak to peak ratio
         Outputs:
         - 2D array with the feature
         '''
@@ -305,10 +317,13 @@ class Mimic(): #(CCD_position):
         sigma_y1,sigma_y2 = dim[1]/2.35,0.8*dim[0]/2.35
         data = Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         avg = Toolbox().range_mean(data,90,100)
-        data = data*(0.001/avg)
+        data = data*(pp_ratio/avg)
+        """TEST"""
+        data =  (data-np.min(data))/np.ptp(data)
+        """"""
         return data
 
-    def feature2(self,dim):
+    def feature2(self,dim,pp_ratio):
         '''Feature-1, 2D gaussian, large pattern, rotated in 45 deg, maximum
         at the corner. To create this feature, a bigger array was defined, a
         Gaussian was included and then rotated. The returned array is a
@@ -317,6 +332,7 @@ class Mimic(): #(CCD_position):
         Remember FWHM ~ 2.3548 sigma
         Inputs:
         - dim: dimensions of the binned FP
+        - pp_ratio: desired approximate peak to peak ratio
         Outputs:
         - 2D array with the feature
         '''
@@ -332,10 +348,10 @@ class Mimic(): #(CCD_position):
                                                     reshape=False,order=3,
                                                     mode='constant')
         avg = Toolbox().range_mean(r_data,90,100)
-        r_data = r_data*(0.001/avg)
+        r_data = r_data*(pp_ratio/avg)
         return r_data[d0/3:d0/3+dim[0],d1/3:d1/3+dim[1]]
 
-    def feature3(self,dim):
+    def feature3(self,dim,pp_ratio):
         '''Feature-1, 2D gaussian, 4 spots at the corners. The feature was
         constructed by adding Gaussians at the corners, one by one. Then, the
         last Gaussian probably has higher values, given the residuals of the
@@ -343,6 +359,7 @@ class Mimic(): #(CCD_position):
         Remember FWHM ~ 2.3548 sigma
         Inputs:
         - dim: dimensions of the binned focal plane
+        - pp_ratio: desired approximate peak to peak ratio
         Output:
         - 2D array with the multiple features
         '''
@@ -361,11 +378,11 @@ class Mimic(): #(CCD_position):
         mean_y1,mean_y2 = dim[1],dim[0]
         data += Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         avg = Toolbox().range_mean(data,90,100)
-        data = data*(0.001/avg)
+        data = data*(pp_ratio/avg)
         return data
 
-    def join_binned(self,binsize=16,header_again=False,mask_again=False,
-                exclude=[31]):
+    def join_binned(self,binsize=16,peak2peak=None,
+                header_again=False,mask_again=False,exclude=[31]):
         """Method to put together mask and data. To not mess with combining
         data from mask and image (averaging borders with data), both of them
         will be processed separately and then joined. Each feature will be
@@ -397,33 +414,36 @@ class Mimic(): #(CCD_position):
         #the feature data
         #the input focal plane image will be already in the new dimensions,
         #to save computational time
-        mvar = Mimic().feature_multivariate(s_mask.shape)
+        mvar = Mimic().feature_multivariate(s_mask.shape,peak2peak)
         aux_minvar = np.min(mvar)
         mvar[s_mask.astype(bool)] = -1
         #
-        feat1 = Mimic().feature1(s_mask.shape)
+        feat1 = Mimic().feature1(s_mask.shape,peak2peak)
         aux_min1 = np.min(feat1)
         feat1[s_mask.astype(bool)] = -1
         #
-        feat2 = Mimic().feature2(s_mask.shape)
+        feat2 = Mimic().feature2(s_mask.shape,peak2peak)
         aux_min2 = np.min(feat2)
         feat2[s_mask.astype(bool)] = -1
         #
-        feat3 = Mimic().feature3(s_mask.shape)
+        feat3 = Mimic().feature3(s_mask.shape,peak2peak)
         aux_min3 = np.min(feat3)
         feat3[s_mask.astype(bool)] = -1
         if True:
             path = os.path.join(os.path.expanduser('~'),
-                            'Code/des_calibrations/dwt_test_files')
+                            'Code/des_calibrations/dwt_files')
             fn = lambda s: os.path.join(path,s)
-            np.save(fn('featmvar_b{0}{1}.npy'.format(*binsize)),mvar)
-            np.save(fn('feat1_b{0}{1}.npy'.format(*binsize)),mvar)
-            np.save(fn('feat2_b{0}{1}.npy'.format(*binsize)),mvar)
-            np.save(fn('feat3_b{0}{1}.npy'.format(*binsize)),mvar)
+            rt = str(peak2peak).replace("1E-","E")
+            np.save(fn('featmvar_b{1}{2}_{0}.npy'.format(rt,*binsize)),mvar)
+            np.save(fn('feat1_b{1}{2}_{0}.npy'.format(rt,*binsize)),feat1)
+            np.save(fn('feat2_b{1}{2}_{0}.npy'.format(rt,*binsize)),feat2)
+            np.save(fn('feat3_b{1}{2}_{0}.npy'.format(rt,*binsize)),feat3)
         if False:
             #checking by plot
-            im = plt.imshow(feat3,cmap='viridis',interpolation='none',
-                        origin='upper',vmin=aux_min3)
+            #im = plt.imshow(feat1,cmap='viridis',interpolation='none',
+            #            origin='upper',vmin=aux_min1)
+            im = plt.imshow(s_mask,cmap='viridis',interpolation='none',
+                        origin='upper')
             plt.colorbar(im)
             plt.show()
         print '\nFeatures for binning {0}x{1} were saved'.format(*binsize)
@@ -432,4 +452,6 @@ class Mimic(): #(CCD_position):
 
 if __name__=='__main__':
     #pos = CCD_position()
-    Mimic().join_binned(binsize=64)
+    for ratio in [1E-1,1E-2,1E-3]:
+        for bins in [8,16,32,64,128][::-1]:
+            Mimic().join_binned(binsize=bins,peak2peak=ratio)

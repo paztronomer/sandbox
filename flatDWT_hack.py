@@ -205,7 +205,7 @@ class Coeff(DWT):
                 Coeff.cml_table.flush()
         except:
             logging.error("Error filling up the table")
-                 
+
     @classmethod
     def close_table(cls):
         Coeff.cml_table.flush()
@@ -230,7 +230,7 @@ class Caller(Coeff):
         #check if the folder exists, if not, crete it
         Toolbox.check_folder(out_folder)
         #setup the output name
-        out_name = "TEST_{0}_{1}.h5".format(wvmother,npyfile[:npyfile.find(".npy")])
+        out_name = "{0}_{1}.h5".format(wvmother,npyfile[:npyfile.find(".npy")])
         out_name = os.path.join(out_folder,out_name)
         #perform the DWT
         res = DWT.undec_mlevel(bin_fp,wvfunction=wvmother)
@@ -273,7 +273,7 @@ if __name__=="__main__":
         if root.count(os.sep) >= DEPTH:
             del dirs[:]
         FPname = [fn(binned) for binned in files if ((".npy" in binned) and
-                ("b44" not in binned)) and ("b64" in binned)]
+                ("b44" not in binned))]
         """below can be replaced by a map()"""
         for fn in FPname:
             for wv_n in wvmother:
