@@ -298,6 +298,8 @@ class Mimic(): #(CCD_position):
         aux += np.abs(np.min(aux))
         avg = Toolbox().range_mean(aux,90,100)
         aux = aux*(pp_ratio/avg)
+        """Normalize"""
+        aux = (aux-np.min(aux))/np.ptp(aux)
         return aux
 
     def feature1(self,dim,pp_ratio):
@@ -318,9 +320,8 @@ class Mimic(): #(CCD_position):
         data = Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         avg = Toolbox().range_mean(data,90,100)
         data = data*(pp_ratio/avg)
-        """TEST"""
-        data =  (data-np.min(data))/np.ptp(data)
-        """"""
+        """Normalize"""
+        data = (data-np.min(data))/np.ptp(data)
         return data
 
     def feature2(self,dim,pp_ratio):
@@ -349,7 +350,10 @@ class Mimic(): #(CCD_position):
                                                     mode='constant')
         avg = Toolbox().range_mean(r_data,90,100)
         r_data = r_data*(pp_ratio/avg)
-        return r_data[d0/3:d0/3+dim[0],d1/3:d1/3+dim[1]]
+        r_data = r_data[d0/3:d0/3+dim[0],d1/3:d1/3+dim[1]]
+        """Normalize"""
+        r_data =  (r_data-np.min(r_data))/np.ptp(r_data)
+        return r_data
 
     def feature3(self,dim,pp_ratio):
         '''Feature-1, 2D gaussian, 4 spots at the corners. The feature was
@@ -379,6 +383,8 @@ class Mimic(): #(CCD_position):
         data += Toolbox().gauss2d(y1,y2,mean_y1,mean_y2,sigma_y1,sigma_y2)
         avg = Toolbox().range_mean(data,90,100)
         data = data*(pp_ratio/avg)
+        """Normalize"""
+        data = (data-np.min(data))/np.ptp(data)
         return data
 
     def join_binned(self,binsize=16,peak2peak=None,
