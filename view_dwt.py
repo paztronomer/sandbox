@@ -80,7 +80,7 @@ class OpenH5():
 
 
 if __name__ == "__main__":
-    wavelet = "dmey"
+    wavelet = "haar"
     folder = "/Users/fco/Code/des_calibrations/dwt_files"
     folder = os.path.join(folder,wavelet)
     #to retrict the depth to be walked!
