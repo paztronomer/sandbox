@@ -435,7 +435,7 @@ class Mimic(): #(CCD_position):
         feat3 = Mimic().feature3(s_mask.shape,peak2peak)
         aux_min3 = np.min(feat3)
         feat3[s_mask.astype(bool)] = -1
-        if True:
+        if False:
             path = os.path.join(os.path.expanduser('~'),
                             'Code/des_calibrations/dwt_files')
             fn = lambda s: os.path.join(path,s)
@@ -444,7 +444,7 @@ class Mimic(): #(CCD_position):
             np.save(fn('feat1_b{1}{2}_{0}.npy'.format(rt,*binsize)),feat1)
             np.save(fn('feat2_b{1}{2}_{0}.npy'.format(rt,*binsize)),feat2)
             np.save(fn('feat3_b{1}{2}_{0}.npy'.format(rt,*binsize)),feat3)
-        if False:
+        if True:
             #checking by plot
             #im = plt.imshow(feat1,cmap='viridis',interpolation='none',
             #            origin='upper',vmin=aux_min1)

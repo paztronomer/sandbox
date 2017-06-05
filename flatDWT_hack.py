@@ -44,7 +44,7 @@ class Toolbox():
     @classmethod
     def check_folder(cls,folder):
         """Method to check for the folder existence, if not present, tries to
-        crete it
+        create it
         """
         if not os.path.exists(folder):
             try:
@@ -256,7 +256,7 @@ class Caller(Coeff):
 if __name__=="__main__":
     #directory setup
     #campus cluster precal nodes or macbook
-    if socket.gethostname() in ["ccc0027","ccc0028","ccc0029"]:
+    if socket.gethostname() in ["ccc0027","ccc0028","ccc0029","ccc0030"]:
         npy_folder = "scratch/dwt_files"
     else:
         npy_folder = "Code/des_calibrations/dwt_files"
