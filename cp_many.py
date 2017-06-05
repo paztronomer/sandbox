@@ -9,9 +9,8 @@ import getpass
 import numpy as np
 
 class Toolbox():
-    def __init__(self,keylock,input_lst,remote1,
-                add_root=None,remote2=None,wildname=None):
-        self.pw = keylock
+    def __init__(self,input_lst,remote1,
+                add_root=None,wildname=None):
         kw1 = {"dtype":"|S200","comments":"#"}
         if not (add_root is None):
             kw1["converters"] = {0: lambda x: os.path.join(add_root,x)}
@@ -23,18 +22,14 @@ class Toolbox():
             self.src = tmp
         else:
             self.src = list(map(lambda x:os.path.join(x,wildname),tmp))
-        remote1 += ":"
-        if not (remote2 is None):
-            remote1 += remote2
         self.remo = remote1
 
     def one(self):
         """Do the copy
         """
         for i in self.src:
-            print "\n\tCP-ing {0} to {1}".format(i,self.remo)
+            #print "\n\tCP-ing {0} to {1}".format(i,self.remo)
             cmd = "cp -v {0} {1}".format(i,self.remo)
-            print cmd
             cmd = shlex.split(cmd)
             try:
                 pB = subprocess.Popen(cmd,shell=False,
@@ -43,9 +38,12 @@ class Toolbox():
                                 stderr=subprocess.PIPE,
                                 universal_newlines=True)
                 outM,errM = pB.communicate()#input=self.pw+"\n")
+                if outM:
+                    print outM
                 if errM:
                     print errM,"_"*30
                 pB.wait()
+                exit()
             except:
                 logging.error("Error in copying {0}".format(i))
 
@@ -65,7 +63,7 @@ if __name__=="__main__":
     h3 = "Root path to be added as prefix, to the paths given in the input list"
     bun.add_argument("--root",help=h3,metavar="")
     h5 = "Wildcard for the files to be copied from source folders to target."
-    h5 += " Example: *_hpix.fits"
+    h5 += " Put it between quotes. Example: '*_hpix.fits'"
     bun.add_argument("--wild",help=h5,metavar="")
     args = bun.parse_args()
     kw0 = vars(args)
@@ -76,4 +74,4 @@ if __name__=="__main__":
     #
     #x = getpass.getpass(prompt="Password to {0}:\n".format(kw0["host"]))
     #
-    Toolbox(x,*ls,**di).one()
+    Toolbox(*ls,**di).one()
