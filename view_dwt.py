@@ -81,7 +81,9 @@ class OpenH5():
 
 if __name__ == "__main__":
     wavelet = "dmey"
-    folder = "/Users/fco/Code/des_calibrations/dwt_files"
+    #folder = "/Users/fco/Code/des_calibrations/dwt_files"
+    folder = "/Users/fco/Code/des_calibrations/dwt_files/"
+    folder += "sample_tst20161216t0223"
     folder = os.path.join(folder,wavelet)
     #to retrict the depth to be walked!
     DEPTH = 0
@@ -90,7 +92,7 @@ if __name__ == "__main__":
             del dirs[:]
         #folder = "/Users/fco/Code/des_calibrations/dwt_files/haar"
         #haar_feat1_b6464.h5
-        FPname = [binned for binned in files if (".h5" in binned)]
+        FPname = [binned for binned in files if ("_z_" in binned)]
         for aux in FPname:
             print "\n\t{0}".format(aux)
             h5aux = OpenH5(folder,aux).h5
