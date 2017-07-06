@@ -244,14 +244,14 @@ if __name__=="__main__":
     tmp += "CCD_1-2-3-6_noOversc"
     #parser
     ecl = argparse.ArgumentParser(description="Time Series constructor")
+    ecl.add_argument("-ccd",help="CCD number on which operate",metavar="",
+                    type=int,default=3)
     ecl.add_argument("-norm",help="Normalization (1:med,2:avg,3:none)",
                     choices=[1,2,3],type=int)
     g = ecl.add_mutually_exclusive_group()
     g.add_argument("--csv",help="Table with DB info (if needed)",metavar="")
     g.add_argument("--loc",help="Path to the CCD fits (if needed)",metavar="",
                 default=tmp)
-    ecl.add_argument("--ccdnum",help="CCD number on which operate",metavar="",
-                    type=int,default=3)
     ecl.add_argument("--d0",help="Width of sub-boxes for dim0 (longer axis)",
                     metavar="",default=16,type=int)
     ecl.add_argument("--d1",help="Width of sub-boxes for dim1 (shorter axis)",
