@@ -46,7 +46,7 @@ class Use():
         Returns
         - sorted structured array
         '''
-        return arr.sort(order=column)
+        return np.sort(arr,order=column)
 
     @classmethod
     def sarr_drop(cls,arr,column,posit='first'):
