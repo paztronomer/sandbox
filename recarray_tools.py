@@ -82,8 +82,9 @@ class Use():
             out = arr[np.array(lastidx)]
         else:
             out = False
-            raise ValueError('Please give a valid position to be selected. 
-                            Valid values are: first, last')
+            m = 'Please give a valid position to be selected.'
+            m += 'Valid values are: first, last'
+            raise ValueError(m)
         returns out
 
 if __name__ == '__main__':
