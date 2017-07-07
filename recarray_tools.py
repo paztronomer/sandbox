@@ -3,39 +3,43 @@
 import os
 import sys
 import time 
+import logging
 import numpy as np
 import pandas as pd
-import despydb.desdbi as desdbi
 
-#########################DES##############################
-class Toolbox():
-    @classmethod
-    def dbquery(cls,toquery,outdtype,dbsection='db-desoper',help_txt=False):
-        '''the personal setup file .desservices.ini must be pointed by desfile
-        DB section by default will be desoper
-        '''
-        desfile = os.path.join(os.getenv('HOME'),'.desservices.ini')
-        section = dbsection
-        dbi = desdbi.DesDbi(desfile,section)
-        if help_txt: help(dbi)
-        cursor = dbi.cursor()
-        cursor.execute(toquery)
-        cols = [line[0].lower() for line in cursor.description]
-        rows = cursor.fetchall()
-        outtab = np.rec.array(rows,dtype=zip(cols,outdtype))
-        return outtab
+try:
+    import despydb.desdbi as desdbi
+    #########################DES##############################
+    class Toolbox():
+        @classmethod
+        def dbquery(cls,toquery,outdtype,dbsection='db-desoper',help_txt=False):
+            '''the personal setup file .desservices.ini must be pointed by desfile
+            DB section by default will be desoper
+            '''
+            desfile = os.path.join(os.getenv('HOME'),'.desservices.ini')
+            section = dbsection
+            dbi = desdbi.DesDbi(desfile,section)
+            if help_txt: help(dbi)
+            cursor = dbi.cursor()
+            cursor.execute(toquery)
+            cols = [line[0].lower() for line in cursor.description]
+            rows = cursor.fetchall()
+            outtab = np.rec.array(rows,dtype=zip(cols,outdtype))
+            return outtab
 
-    @classmethod
-    def aux(cls):
-        q = "select nite,band,expnum"
-        q += " from exposure"
-        q += " where nite between 20170201 and 20170223"
-        q += " and obstype='dome flat'"
-        q += " and band='r'"
-        datatype = ['i4','a10','i4']
-        tab = Toolbox.dbquery(q,datatype)
-        return tab
-##########################################################
+        @classmethod
+        def aux(cls):
+            q = "select nite,band,expnum"
+            q += " from exposure"
+            q += " where nite between 20170201 and 20170223"
+            q += " and obstype='dome flat'"
+            q += " and band='r'"
+            datatype = ['i4','a10','i4']
+            tab = Toolbox.dbquery(q,datatype)
+            return tab
+    ##########################################################
+except:
+    logging.warning("DES-module cannot be loaded: despydb.desdbi")
 
 class Use():
     @classmethod
@@ -85,7 +89,7 @@ class Use():
             m = 'Please give a valid position to be selected.'
             m += 'Valid values are: first, last'
             raise ValueError(m)
-        returns out
+        return out
 
 if __name__ == '__main__':
     
