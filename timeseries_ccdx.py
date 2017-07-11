@@ -32,7 +32,7 @@ class FitsImage():
 
 class Stack():
     def __init__(self,suffix=None,opt=None,table=None,loca=None,ccdnum=None,
-                width_dim0=None,width_dim1=None):
+                width_dim0=None,width_dim1=None,raw=None):
         if table is not None:
             self.df = pd.read_csv(table,sep=",")
         else:
@@ -48,6 +48,7 @@ class Stack():
         self.ccdnum = ccdnum
         self.w0 = width_dim0
         self.w1 = width_dim1
+        self.raw = raw
 
     def dbinfo(self):
         """
@@ -76,15 +77,19 @@ class Stack():
                 dt = np.dtype([("nite","i4"),("expnum","i4"),("band","|S10"),
                             ("ccdnum","i4"),("exptime","f4")])
                 obs = np.array([tuple(obs)],dtype=dt)
+                if self.raw:
+                    fp_ccd_aux = fp.ccd + 1.
+                else:
+                    fp_ccd_aux = fp.ccd
                 #create a tuple of arrays for the different sections,
                 #iterating in dim0 and inside in dim1
-                qx = Stats().quad(fp.ccd,w0=self.w0,w1=self.w1)
+                qx = Stats().quad(fp_ccd_aux,w0=self.w0,w1=self.w1)
                 #here call the stats methods
                 #Usual normalization is norm=np.median(fp.ccd))
                 if self.opt == 1:
-                    norm_x = np.median(fp.ccd)
+                    norm_x = np.median(fp_ccd_aux)
                 elif self.opt == 2:
-                    norm_x = np.mean(fp.ccd)
+                    norm_x = np.mean(fp_ccd_aux)
                 elif self.opt == 3:
                     norm_x = None
                 else:
@@ -127,11 +132,15 @@ class Stack():
                                 ("band","|S10"),("ccdnum","i4"),
                                 ("exptime","f4")])
                     hdr = np.array([tuple(h)],dtype=dt)
-                    qx = Stats().quad(f.ccd,w0=self.w0,w1=self.w1)
+                    if self.raw:
+                        f_ccd_aux = f.ccd + 1.
+                    else:
+                        f_ccd_aux = f.ccd
+                    qx = Stats().quad(f_ccd_aux,w0=self.w0,w1=self.w1)
                     if self.opt == 1:
-                        norm_x = np.median(f.ccd)
+                        norm_x = np.median(f_ccd_aux)
                     elif self.opt == 2:
-                        norm_x = np.mean(f.ccd)
+                        norm_x = np.mean(f_ccd_aux)
                     elif self.opt == 3:
                         norm_x = None
                     else:
@@ -248,6 +257,7 @@ if __name__=="__main__":
                     type=int,default=3)
     ecl.add_argument("-norm",help="Normalization (1:med,2:avg,3:none)",
                     choices=[1,2,3],type=int)
+    ecl.add_argument("--raw",help="Use if its a raw image",action="store_true")
     g = ecl.add_mutually_exclusive_group()
     g.add_argument("--csv",help="Table with DB info (if needed)",metavar="")
     g.add_argument("--loc",help="Path to the CCD fits (if needed)",metavar="",
@@ -261,8 +271,9 @@ if __name__=="__main__":
     nmsp = ecl.parse_args()
     #For skytemplates y4e1 I used: --csv redpixcor.csv
     kwin = {"table":nmsp.csv,"suffix":nmsp.suffix,"opt":nmsp.norm}
-    kwin.update({"loca":nmsp.loc,"ccdnum":nmsp.ccdnum})
+    kwin.update({"loca":nmsp.loc,"ccdnum":nmsp.ccd})
     kwin.update({"width_dim0":nmsp.d0,"width_dim1":nmsp.d1})
+    kwin.update({"raw":nmsp.raw})
     if nmsp.csv is not None:
         Stack(**kwin).one()
     elif nmsp.loc is not None:
