@@ -78,7 +78,11 @@ class Stack():
                             ("ccdnum","i4"),("exptime","f4")])
                 obs = np.array([tuple(obs)],dtype=dt)
                 if self.raw:
-                    fp_ccd_aux = fp.ccd + 1.
+                    f1 = lambda x: int(x)-1
+                    dsec = fp.header["DATASEC"].strip().strip("[").strip("]")
+                    dsec = map(f1,dsec.replace(":",",").split(","))
+                    fp_ccd_aux = fp.ccd[dsec[2]:dsec[3]+1,dsec[0]:dsec[1]+1] 
+                    fp_ccd_aux += 1.
                 else:
                     fp_ccd_aux = fp.ccd
                 #create a tuple of arrays for the different sections,
@@ -133,7 +137,11 @@ class Stack():
                                 ("exptime","f4")])
                     hdr = np.array([tuple(h)],dtype=dt)
                     if self.raw:
-                        f_ccd_aux = f.ccd + 1.
+                        f1 = lambda x: int(x)-1
+                        dsec = f.header["DATASEC"].strip().strip("[").strip("]")
+                        dsec = map(f1,dsec.replace(":",",").split(","))
+                        f_ccd_aux = f.ccd[dsec[2]:dsec[3]+1,dsec[0]:dsec[1]+1] 
+                        f_ccd_aux += 1.
                     else:
                         f_ccd_aux = f.ccd
                     qx = Stats().quad(f_ccd_aux,w0=self.w0,w1=self.w1)
