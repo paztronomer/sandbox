@@ -107,8 +107,8 @@ class Stack():
                 obs3 = np.vstack((obs3,obs))
                 print counter
                 counter += 1
-        np.save("stat_{0}.npy".format(self.suff),q3)
-        np.save("info_{0}.npy".format(self.suff),obs3)
+        np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
+        np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),obs3)
         print "Done stats"
         return True
     
@@ -161,8 +161,8 @@ class Stack():
                     q3 = np.vstack((q3,qst))
                     hdr3 = np.vstack((hdr3,hdr))
                     c += 1
-        np.save("stat_{0}.npy".format(self.suff),q3)
-        np.save("info_{0}.npy".format(self.suff),hdr3)
+        np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
+        np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),hdr3)
         print "Stats were successfully performed"
         return True
                 
@@ -234,10 +234,10 @@ class Stats():
         Here the normalization is assumed as the division by a value
         """
         res = []
-        dt = np.dtype([("med","f4"),("avg","f4"),
-                    ("med_n","f4"),("avg_n","f4"),
-                    ("rms_n","f4"),("unc_n","f4"),
-                    ("mad_n","f4")])
+        dt = np.dtype([("norm","f4"),("med","f4"),
+                    ("avg","f4"),("med_n","f4"),
+                    ("avg_n","f4"),("rms_n","f4"),
+                    ("unc_n","f4"),("mad_n","f4")])
         for x in tpl:
             if not isinstance(x,np.ndarray):
                 logging.error("Not an array")
@@ -245,6 +245,7 @@ class Stats():
             tmp = []
             if norm is None:
                 norm = 1.
+            tmp += [norm]
             tmp += [np.median(x),np.mean(x)]
             tmp += [np.median(x/norm),np.mean(x/norm)]
             tmp += [Stats().rms(x/norm),Stats().uncert(x/norm)]
