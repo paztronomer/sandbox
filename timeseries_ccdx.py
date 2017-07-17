@@ -107,9 +107,13 @@ class Stack():
                 obs3 = np.vstack((obs3,obs))
                 print counter
                 counter += 1
-        np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
-        np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),obs3)
-        print "Done stats"
+        try:
+            np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
+            np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),obs3)
+            print "Done stats"
+        except:
+            logging.error("No computation was made. Exiting")
+            exit(1)
         return True
     
     def two(self):
@@ -161,9 +165,13 @@ class Stack():
                     q3 = np.vstack((q3,qst))
                     hdr3 = np.vstack((hdr3,hdr))
                     c += 1
-        np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
-        np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),hdr3)
-        print "Stats were successfully performed"
+        try:
+            np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
+            np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),hdr3)
+            print "Stats were successfully performed"
+        except:
+            logging.error("No computation was made. Exiting")
+            exit(1)
         return True
                 
 
