@@ -266,15 +266,17 @@ class Stats():
 if __name__=="__main__":
     print socket.gethostname()
     #only temporary
-    tmp = "/work/devel/fpazch/calib_space/xtalkNoOversc_specter_y4e1/"
-    tmp += "CCD_1-2-3-6_noOversc"
+    # tmp = "/work/devel/fpazch/calib_space/xtalkNoOversc_specter_y4e1/"
+    # tmp += "CCD_1-2-3-6_noOversc"
+    tmp = "/work/devel/fpazch/calib_space/xtalk_specter_y4e1/CCD_2_3"
     #parser
     ecl = argparse.ArgumentParser(description="Time Series constructor")
     ecl.add_argument("-ccd",help="CCD number on which operate",metavar="",
                     type=int,default=3)
     ecl.add_argument("-norm",help="Normalization (1:med,2:avg,3:none)",
                     choices=[1,2,3],type=int)
-    ecl.add_argument("--raw",help="Use if its a raw image",action="store_true")
+    ecl.add_argument("--raw",help="Use if raw image with overscan",
+                    action="store_true")
     g = ecl.add_mutually_exclusive_group()
     g.add_argument("--csv",help="Table with DB info (if needed)",metavar="")
     g.add_argument("--loc",help="Path to the CCD fits (if needed)",metavar="",
