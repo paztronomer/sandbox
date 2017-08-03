@@ -1,4 +1,12 @@
-"""Script to construct timeseries from a set of CCD images
+"""Script to construct timeseries from a set of CCD images. It takes
+different exposures, and given a CCD number, divide the area in rectangular
+boxes for which statistics is calculated (under some normalization to allow
+comparison among exposures).
+Then, construct a 3D array (structured) and with this the time series is 
+done.
+
+Francisco Paz-Chinchon
+DES/NCSA
 """
 
 import os
@@ -31,15 +39,17 @@ class FitsImage():
 
 
 class Stack():
-    def __init__(self,suffix=None,opt=None,table=None,loca=None,ccdnum=None,
-                width_dim0=None,width_dim1=None,raw=None):
+    def __init__(
+            self, suffix=None, opt=None, table=None, loca=None,
+            ccdnum=None, width_dim0=None, width_dim1=None, raw=None):
         if table is not None:
-            self.df = pd.read_csv(table,sep=",")
+            self.df = pd.read_csv(table, sep=",")
         else:
             self.df = None
         if suffix is None:
             logging.info("\t-Suffix was not provided. Using \'d0xd1_PID\'")
-            s = str(width_dim0)+"x"+str(width_dim1)+"_"+str(os.getpid())
+            s = str(width_dim0) + "x" + str(width_dim1) + "_"
+            s += str(os.getpid())
             self.suff = s
         else:
             self.suff = suffix 
@@ -50,44 +60,37 @@ class Stack():
         self.w1 = width_dim1
         self.raw = raw
 
-    def dbinfo(self):
-        """
-        select expnum,t_eff,b_eff,skybrightness,fwhm_asec from firstcut_eval 
-           where expnum=567855
-        select expnum,skypc00,skypc01,skypc02,skypc03,skyrms,skyfrac 
-           from skyfit_qa where expnum=567855
-        """
-        pass
-
-    def one(self,root="/archive_data/desarchive"):
+    def one(self, root="/archive_data/desarchive"):
         """Runs the code over crosstalked CCDs, using paths to their 
         locations given in self.table
         """
         counter = 0
-        for idx,row in self.df.iterrows():
-            if np.equal(row["ccdnum"],self.ccdnum):
+        for idx, row in self.df.iterrows():
+            if np.equal(row["ccdnum"], self.ccdnum):
                 gc.collect()
-                aux = os.path.join(root,row["path"])
-                aux = os.path.join(aux,row["filename"])
+                aux = os.path.join(root, row["path"])
+                aux = os.path.join(aux, row["filename"])
                 fp = FitsImage(aux)
                 obs = []
-                obs += [int(fp.header["NITE"]),int(fp.header["EXPNUM"])]
-                obs += [fp.header["BAND"].strip(),int(fp.header["CCDNUM"])]
+                obs += [int(fp.header["NITE"]), int(fp.header["EXPNUM"])]
+                obs += [fp.header["BAND"].strip(), int(fp.header["CCDNUM"])]
                 obs += [float(fp.header["EXPTIME"])]
-                dt = np.dtype([("nite","i4"),("expnum","i4"),("band","|S10"),
-                            ("ccdnum","i4"),("exptime","f4")])
-                obs = np.array([tuple(obs)],dtype=dt)
+                dt = np.dtype([("nite", "i4"), ("expnum", "i4"),
+                               ("band", "|S10"), ("ccdnum", "i4"),
+                               ("exptime", "f4")])
+                obs = np.array([tuple(obs)], dtype=dt)
                 if self.raw:
-                    f1 = lambda x: int(x)-1
+                    f1 = lambda x: int(x) - 1
                     dsec = fp.header["DATASEC"].strip().strip("[").strip("]")
-                    dsec = map(f1,dsec.replace(":",",").split(","))
-                    fp_ccd_aux = fp.ccd[dsec[2]:dsec[3]+1,dsec[0]:dsec[1]+1] 
+                    dsec = map(f1, dsec.replace(":", ",").split(","))
+                    fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
+                                        dsec[0] : dsec[1]+1] 
                     fp_ccd_aux += 1.
                 else:
                     fp_ccd_aux = fp.ccd
                 #create a tuple of arrays for the different sections,
                 #iterating in dim0 and inside in dim1
-                qx = Stats().quad(fp_ccd_aux,w0=self.w0,w1=self.w1)
+                qx = Stats().quad(fp_ccd_aux, w0=self.w0, w1=self.w1)
                 #here call the stats methods
                 #Usual normalization is norm=np.median(fp.ccd))
                 if self.opt == 1:
@@ -99,17 +102,17 @@ class Stack():
                 else:
                     logging.error("Must select one of the available norm opt")
                     exit(1)
-                qst = Stats().fill_it(qx,norm=norm_x)
+                qst = Stats().fill_it(qx, norm=norm_x)
                 if counter == 0:
                     q3 = qst
                     obs3 = obs
-                q3 = np.vstack((q3,qst))
-                obs3 = np.vstack((obs3,obs))
+                q3 = np.vstack((q3, qst))
+                obs3 = np.vstack((obs3, obs))
                 print counter
                 counter += 1
         try:
-            np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
-            np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),obs3)
+            np.save("stat_{0:02}_{1}.npy".format(self.ccdnum, self.suff), q3)
+            np.save("info_{0:02}_{1}.npy".format(self.ccdnum, self.suff), obs3)
             print "Done stats"
         except:
             logging.error("No computation was made. Exiting")
@@ -122,33 +125,34 @@ class Stack():
         #walk in one depth level 
         DEPTH = 0
         c = 0
-        for root,dirs,files in os.walk(self.loca):
+        for root, dirs, files in os.walk(self.loca):
             if root.count(os.sep) >= DEPTH:
                 del dirs[:]
-            for index,fits in enumerate(files):
+            for index, fits in enumerate(files):
                 gc.collect()
-                aux_f = os.path.join(self.loca,fits)
+                aux_f = os.path.join(self.loca, fits)
                 f = FitsImage(aux_f) 
                 if (self.ccdnum == f.header["CCDNUM"]):
                     #as nite is written by pipeline, must be constructed
-                    nite = f.header["DATE-OBS"].strip().replace("-","")[:8]
+                    nite = f.header["DATE-OBS"].strip().replace("-", "")[:8]
                     band = f.header["FILTER"].strip()[0]
                     h = [int(nite),f.header["EXPNUM"]]
                     h += [band,f.header["CCDNUM"]]
                     h += [f.header["EXPTIME"]]
-                    dt = np.dtype([("nite","i4"),("expnum","i4"),
-                                ("band","|S10"),("ccdnum","i4"),
-                                ("exptime","f4")])
-                    hdr = np.array([tuple(h)],dtype=dt)
+                    dt = np.dtype([("nite", "i4"), ("expnum", "i4"),
+                                   ("band", "|S10"), ("ccdnum", "i4"),
+                                   ("exptime", "f4")])
+                    hdr = np.array([tuple(h)], dtype=dt)
                     if self.raw:
                         f1 = lambda x: int(x)-1
                         dsec = f.header["DATASEC"].strip().strip("[").strip("]")
-                        dsec = map(f1,dsec.replace(":",",").split(","))
-                        f_ccd_aux = f.ccd[dsec[2]:dsec[3]+1,dsec[0]:dsec[1]+1] 
+                        dsec = map(f1, dsec.replace(":", ",").split(","))
+                        f_ccd_aux = f.ccd[dsec[2] : dsec[3]+1,
+                                          dsec[0] : dsec[1]+1] 
                         f_ccd_aux += 1.
                     else:
                         f_ccd_aux = f.ccd
-                    qx = Stats().quad(f_ccd_aux,w0=self.w0,w1=self.w1)
+                    qx = Stats().quad(f_ccd_aux, w0=self.w0, w1=self.w1)
                     if self.opt == 1:
                         norm_x = np.median(f_ccd_aux)
                     elif self.opt == 2:
@@ -158,16 +162,16 @@ class Stack():
                     else:
                         logging.error("Must select a valid normalization")
                         exit(1)
-                    qst = Stats().fill_it(qx,norm=norm_x)
+                    qst = Stats().fill_it(qx, norm=norm_x)
                     if c == 0:
                         q3 = qst
                         hdr3 = hdr
-                    q3 = np.vstack((q3,qst))
-                    hdr3 = np.vstack((hdr3,hdr))
+                    q3 = np.vstack((q3, qst))
+                    hdr3 = np.vstack((hdr3, hdr))
                     c += 1
         try:
-            np.save("stat_{0:02}_{1}.npy".format(self.ccdnum,self.suff),q3)
-            np.save("info_{0:02}_{1}.npy".format(self.ccdnum,self.suff),hdr3)
+            np.save("stat_{0:02}_{1}.npy".format(self.ccdnum, self.suff), q3)
+            np.save("info_{0:02}_{1}.npy".format(self.ccdnum, self.suff), hdr3)
             print "Stats were successfully performed"
         except:
             logging.error("No computation was made. Exiting")
@@ -176,7 +180,7 @@ class Stack():
                 
 
 class Stats():
-    def quad(self,arr,w0=512,w1=1024):
+    def quad(self, arr, w0=512, w1=1024):
         """Subdivides the image in smaller regions and returns a tuple
         of 2D arrays
         w0: width of dimension 0, for the subregion
@@ -186,80 +190,80 @@ class Stats():
         """
         #limits for the subsections
         #the ending point is not in the array
-        lim0 = np.arange(0,arr.shape[0],w0)
-        lim1 = np.arange(0,arr.shape[1],w1)
+        lim0 = np.arange(0, arr.shape[0], w0)
+        lim1 = np.arange(0, arr.shape[1], w1)
         ss = [] #list of arrays
         cnt = 0
-        with open("coord_{0}x{1}.csv".format(w0,w1),"w+") as f:
-            m = "{0:<8}{1:<8}{2:<8}".format("index","y_ini","y_end")
-            m += "{0:<8}{1:<8}\n".format("x_ini","x_end")
+        with open("coord_{0}x{1}.csv".format(w0, w1), "w+") as f:
+            m = "{0:<8}{1:<8}{2:<8}".format("index", "y_ini", "y_end")
+            m += "{0:<8}{1:<8}\n".format("x_ini", "x_end")
             f.write(m)
             for j in lim0:
                 for k in lim1:
-                    ss.append(np.copy(arr[j:j+w0,k:k+w1]))
-                    l = "{0:<8}{1:<8}{2:<8}".format(cnt,j,j+w0)
-                    l += "{0:<8}{1:<8}\n".format(k,k+w1)
+                    ss.append(np.copy(arr[j : j+w0, k : k+w1]))
+                    l = "{0:<8}{1:<8}{2:<8}".format(cnt, j, j + w0)
+                    l += "{0:<8}{1:<8}\n".format(k, k + w1)
                     f.write(l)
                     cnt += 1
         return tuple(ss)
 
-    def rms(self,arr):
+    def rms(self, arr):
         """returns RMS for ndarray
         """
         outrms = np.sqrt(np.mean(np.square(arr.ravel())))
         return outrms
 
-    def uncert(self,arr):
+    def uncert(self, arr):
         """calculates the uncertain in a parameter, as usually used in
         physics
         """
         ux = np.sqrt(np.mean(np.square(arr.ravel())) +
-                    np.square(np.mean(arr.ravel())))
+                     np.square(np.mean(arr.ravel())))
         return ux
 
-    def mad(self,arr):
+    def mad(self, arr):
         return np.median(np.abs(arr - np.median(arr)))
 
-    def entropy(self,arr):
+    def entropy(self, arr):
         return stats.entropy(arr.ravel())
 
-    def corr_random(self,arr):
+    def corr_random(self, arr):
         """correlate data with random 2D array
         """
-        auxrdm = np.random.rand(arr.shape[0],arr.shape[1])
-        auxrdm = auxrdm/np.mean(auxrdm)
-        corr2d = signal.correlate2d(data,auxrdm,mode="same",boundary="symm")
+        auxrdm = np.random.rand(arr.shape[0], arr.shape[1])
+        auxrdm = auxrdm / np.mean(auxrdm)
+        corr2d = signal.correlate2d(data, auxrdm, mode="same", boundary="symm")
         return corr2d
 
-    def gaussian_filter(self,arr,sigma=1.):
+    def gaussian_filter(self, arr, sigma=1.):
         '''performs Gaussian kernel on image
         '''
-        return scipy.ndimage.gaussian_filter(arr,sigma=sigma)
+        return scipy.ndimage.gaussian_filter(arr, sigma=sigma)
 
-    def fill_it(self,tpl,norm=None):
+    def fill_it(self, tpl, norm=None):
         """For each one of the arrays in the tuple, perform statistics
         If no normalization value is given then result is not normalized
         Here the normalization is assumed as the division by a value
         """
         res = []
-        dt = np.dtype([("norm","f4"),("med","f4"),
-                    ("avg","f4"),("med_n","f4"),
-                    ("avg_n","f4"),("rms_n","f4"),
-                    ("unc_n","f4"),("mad_n","f4")])
+        dt = np.dtype([("norm", "f4"), ("med", "f4"),
+                       ("avg", "f4"), ("med_n", "f4"),
+                       ("avg_n", "f4"), ("rms_n", "f4"),
+                       ("unc_n", "f4"), ("mad_n", "f4")])
         for x in tpl:
-            if not isinstance(x,np.ndarray):
+            if not isinstance(x, np.ndarray):
                 logging.error("Not an array")
                 exit(1)
             tmp = []
             if norm is None:
                 norm = 1.
             tmp += [norm]
-            tmp += [np.median(x),np.mean(x)]
-            tmp += [np.median(x/norm),np.mean(x/norm)]
-            tmp += [Stats().rms(x/norm),Stats().uncert(x/norm)]
-            tmp += [Stats().mad(x/norm)]
+            tmp += [np.median(x), np.mean(x)]
+            tmp += [np.median(x / norm), np.mean(x / norm)]
+            tmp += [Stats().rms(x / norm), Stats().uncert(x / norm)]
+            tmp += [Stats().mad(x / norm)]
             res.append(tuple(tmp))
-        out = np.array(res,dtype=dt)
+        out = np.array(res, dtype=dt)
         return out
 
 
@@ -268,31 +272,33 @@ if __name__=="__main__":
     #only temporary
     # tmp = "/work/devel/fpazch/calib_space/xtalkNoOversc_specter_y4e1/"
     # tmp += "CCD_1-2-3-6_noOversc"
-    tmp = "/work/devel/fpazch/calib_space/xtalk_specter_y4e1/CCD_2_3"
+    # tmp = "/work/devel/fpazch/calib_space/xtalk_specter_y4e1/CCD_2_3"
+    tmp = "/work/devel/fpazch/calib_space/xtalkNoOversc_specter_y4e1/"
+    tmp += "CCD_2-3_xtalked_ccd02NoOsc"
     #parser
     ecl = argparse.ArgumentParser(description="Time Series constructor")
-    ecl.add_argument("-ccd",help="CCD number on which operate",metavar="",
-                    type=int,default=3)
-    ecl.add_argument("-norm",help="Normalization (1:med,2:avg,3:none)",
-                    choices=[1,2,3],type=int)
-    ecl.add_argument("--raw",help="Use if raw image with overscan",
-                    action="store_true")
+    ecl.add_argument("-ccd", help="CCD number on which operate", metavar="",
+                     type=int, default=3)
+    ecl.add_argument("-norm", help="Normalization (1:med,2:avg,3:none)",
+                     choices=[1,2,3], type=int)
+    ecl.add_argument("--raw", help="Use if raw image with overscan",
+                     action="store_true")
     g = ecl.add_mutually_exclusive_group()
-    g.add_argument("--csv",help="Table with DB info (if needed)",metavar="")
-    g.add_argument("--loc",help="Path to the CCD fits (if needed)",metavar="",
-                default=tmp)
-    ecl.add_argument("--d0",help="Width of sub-boxes for dim0 (longer axis)",
-                    metavar="",default=16,type=int)
-    ecl.add_argument("--d1",help="Width of sub-boxes for dim1 (shorter axis)",
-                    metavar="",default=128,type=int)
-    ecl.add_argument("--suffix",help="Suffix for the output filenames",
+    g.add_argument("--csv", help="Table with DB info (if needed)", metavar="")
+    g.add_argument("--loc", help="Path to the CCD fits (if needed)",
+                   metavar="", nargs="?", const=tmp, type=str)
+    ecl.add_argument("--d0", help="Width of sub-boxes for dim0 (longer axis)",
+                    metavar="", default=16, type=int)
+    ecl.add_argument("--d1", help="Width of sub-boxes for dim1 (shorter axis)",
+                    metavar="", default=128, type=int)
+    ecl.add_argument("--suffix", help="Suffix for the output filenames",
                     metavar="")
     nmsp = ecl.parse_args()
     #For skytemplates y4e1 I used: --csv redpixcor.csv
-    kwin = {"table":nmsp.csv,"suffix":nmsp.suffix,"opt":nmsp.norm}
-    kwin.update({"loca":nmsp.loc,"ccdnum":nmsp.ccd})
-    kwin.update({"width_dim0":nmsp.d0,"width_dim1":nmsp.d1})
-    kwin.update({"raw":nmsp.raw})
+    kwin = {"table": nmsp.csv, "suffix": nmsp.suffix, "opt": nmsp.norm}
+    kwin.update({"loca": nmsp.loc, "ccdnum": nmsp.ccd})
+    kwin.update({"width_dim0": nmsp.d0, "width_dim1": nmsp.d1})
+    kwin.update({"raw": nmsp.raw})
     if nmsp.csv is not None:
         Stack(**kwin).one()
     elif nmsp.loc is not None:
