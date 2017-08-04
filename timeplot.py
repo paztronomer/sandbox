@@ -815,9 +815,17 @@ class Compare():
         return data_sub, row_plot
 
     def side1(self, ccd=None, amp=0, saveplot=True, suffix=None):
-        """ Options of plot 1, side by side per CCD
+        """ Options of plot 1, side by side per CCD. All at the same scale
+        or at least compatible by some shown factor (put some annotation)
+        Upper row contains the profile for the ccd rows (larger dimension),
+        zoomed to the region of higher density of points
+        Lower row contains the histogram of the values used to normalize the
+        boxes, usually the median of the values per CCD.
         """
-        fnm1 = "stat_{0:02}_noOsc_16x128_medN.npy".format(CCD)
+        # For NoOsc
+        # fnm1 = "stat_{0:02}_noOsc_16x128_medN.npy".format(CCD)
+        # For ccd02NoOsc
+        fnm1 = "stat_{0:02}_ccd02NoOsc_medN.npy".format(CCD)
         fnm2 = "stat_{0:02}_xtalked_16x128_medN.npy".format(CCD)
         fnm3 = "stat_{0:02}_16x128_y4e1_medN.npy".format(CCD)
         fnm = [fnm1, fnm2, fnm3]
@@ -843,20 +851,28 @@ class Compare():
             "cmap": "viridis",
             "cmin": 1,
             }
-        # For CCD3
+        # For CCD3 ampB
         # kw0.update({"range": [[0, 4096] , [0.807, 0.807 + ywide/4.]],})
-        kw0.update({"range": [[0, 4096] , [0.995, 0.995 + ywide/4.]],})
+        # For CCD3 ampA
+        # kw0.update({"range": [[0, 4096] , [0.995, 0.995 + ywide/4.]],})
+        # For CCD3 ampB, ccd02NoOsc
+        # kw0.update({"range": [[0, 4096] , [0.925, 0.925 + ywide]],})
+        kw0.update({"range": [[0, 4096] , [0.96, 0.96 + ywide]],}) 
         p1 = ax[0, 0].hist2d(row_plot.compressed().ravel(), 
                             d1["avg_n"].compressed().ravel(),
                             **kw0)
-        # For CCD3
+        # For CCD3 ampB
         # kw0.update({"range": [[0, 4096] , [0.94, 0.94 + ywide]],})
+        # For ccd3 ampA
+        # kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
         kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
         p2 = ax[0, 1].hist2d(row_plot.compressed().ravel(), 
                             d2["avg_n"].compressed().ravel(),
                             **kw0)
-        # For CCD3
+        # For CCD3 ampB
         # kw0.update({"range": [[0, 4096] , [0.96, 0.96 + ywide]],})
+        # For ccd3 ampA
+        # kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
         kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
         p3 = ax[0, 2].hist2d(row_plot.compressed().ravel(), 
                             d3["avg_n"].compressed().ravel(),
@@ -926,7 +942,7 @@ class Compare():
         ax[0, 2].xaxis.set_major_formatter(majorFormatter_x0)
         # Labels
         kw_lab = {"fontsize": 10, "color": "blue",}
-        ax[0, 0].set_title("xtalked, no overscan. Scale: 4X", **kw_lab)
+        ax[0, 0].set_title("xtalked, CCD2 null overscan. Scale: 1X", **kw_lab)
         ax[0, 1].set_title("xtalked. Scale: 1X", **kw_lab)
         ax[0, 2].set_title("reduced. Scale: 1X", **kw_lab)
         ax[0, 0].set_ylabel(r"$<x_{box}>_{norm}$")
@@ -955,7 +971,9 @@ class Compare():
     def side2(self, ccd=None, amp=0, saveplot=True, suffix=None):
         """ Options of plot 2, side by side per CCD, only 2 sets
         """
-        fnm1 = "stat_{0:02}_noOsc_16x128_medN.npy".format(CCD)
+        # For CCD2 NoOsc
+        # fnm1 = "stat_{0:02}_noOsc_16x128_medN.npy".format(CCD)
+        fnm1 = "stat_{0:02}_ccd02NoOsc_medN.npy".format(CCD)
         fnm2 = "stat_{0:02}_xtalked_16x128_medN.npy".format(CCD)
         fnm = [fnm1, fnm2]
         # Retrieve only one amplifier, masked arrays
@@ -969,7 +987,8 @@ class Compare():
         # Density histograms
         # For CCD3, ywide 0.1
         # For CCD2, ywide = 6400
-        ywide = 6400
+        # For CCD2, ampA ccd02NoOsc ywide = 4000 
+        ywide = 7E3
         kw0 = {
             "bins": 100,
             "cmap": "viridis",
@@ -980,7 +999,9 @@ class Compare():
         # kw0.update({"range": [[0, 4096] , [0.995, 0.995 + ywide/4.]],})
         # For CCD2
         # kw0.update({"range": [[0, 4096] , [2.34, 2.34 + ywide/4000.]],})
-        kw0.update({"range": [[0, 4096] , [-0.001, -0.00064]],})
+        # kw0.update({"range": [[0, 4096] , [-0.001, -0.00064]],})
+        # For CCD2, ampA, ccd02NoOsc
+        # kw0.update({"range": [[0, 4096] , [-0.0011, -0.0011 + ywide]],})
         p1 = ax[0, 0].hist2d(row_plot.compressed().ravel(), 
                             d1["avg_n"].compressed().ravel(),
                             **kw0)
@@ -988,7 +1009,10 @@ class Compare():
         # kw0.update({"range": [[0, 4096] , [0.94, 0.94 + ywide]],})
         # For CCD2
         # kw0.update({"range": [[0, 4096] , [-8000, -8000 + ywide]],})
-        kw0.update({"range": [[0, 4096] , [1.8, 5]],})
+        # kw0.update({"range": [[0, 4096] , [1.8, 5]],})
+        # For CCD2, ampA, ccd02NoOsc
+        # kw0.update({"range": [[0, 4096] , [1.8, 1.8 + 1E4 * ywide]],})
+        kw0.update({"range": [[0, 4096] , [-9500, -9500 + ywide]],})
         p2 = ax[0, 1].hist2d(row_plot.compressed().ravel(), 
                             d2["avg_n"].compressed().ravel(),
                             **kw0)
@@ -1046,7 +1070,8 @@ class Compare():
         # Labels
         kw_lab = {"fontsize": 10, "color": "blue",}
         # ax[0, 0].set_title("xtalked, no overscan", **kw_lab)
-        ax[0, 0].set_title("xtalked, no overscan. Scale: ??", **kw_lab)
+        ax[0, 0].set_title("xtalked, CCD2 null overscan. Scale: 5,200X", 
+                           **kw_lab)
         ax[0, 1].set_title("xtalked. Scale: 1X", **kw_lab)
         ax[0, 0].set_ylabel(r"$<x_{box}>_{norm}$")
         ax[0 ,0].set_xlabel("rows")
@@ -1055,7 +1080,7 @@ class Compare():
         ax[1, 0].set_xlabel("Norm value")
         ax[1, 1].set_xlabel("Norm value")
         # For CCD3 plt.suptitle("CCD {0}, issue Amp".format(CCD))
-        plt.suptitle("CCD {0}, *non* issue Amp".format(CCD))
+        plt.suptitle("CCD {0}, issue Amp".format(CCD))
 
         plt.subplots_adjust(left=.1, bottom=0.06, right=0.98, top=0.90, 
                         wspace=0.28, hspace=0.07)
@@ -1106,8 +1131,12 @@ if __name__ == "__main__":
     CCD = 2
     
     C = Compare()
-    C.side2(ccd=CCD, amp=1, saveplot=False, suffix="AmpA")
-    # C.side1(ccd=CCD, amp=0, saveplot=False, suffix="AmpB")
+    C.side2(ccd=CCD, amp=0, saveplot=True, suffix="AmpB_set2")
+    # C.side2(ccd=CCD, amp=1, saveplot=True, suffix="AmpA_set2")
+    # C.side1(ccd=CCD, amp=1, saveplot=True, suffix="AmpA_set2")
+    # C.side1(ccd=CCD, amp=0, saveplot=True, suffix="AmpB_set2")
+    # C.side2(ccd=CCD, amp=1, saveplot=False, suffix="AmpA_set1")
+    # C.side1(ccd=CCD, amp=0, saveplot=False, suffix="AmpB_set1")
     
 
     # Histo = Tide(stat="stat_{0:02}_16x128_y4e1_medN.npy".format(CCD),
