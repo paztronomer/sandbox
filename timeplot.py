@@ -770,7 +770,304 @@ class Tide():
                     transparent=False, bbox_inches=None, pad_inches=0.1, 
                     frameon=None)
         plt.show()
+           
         
+class Compare():
+    """ Ad-hoc class to plot side-by-side the profiles and results on the same
+    scale, for the different reductions
+    """
+    def sel_amplifier(self, data, amp=0, NCCD=623, NBOX=4096):
+        """ Receives the entire CCD, and select only one amplifier. Returns
+        a masked array of the original.
+        """
+        # Distinguish per amplifier
+        row_ini, row_end = 0, 256
+        row_issue1, row_issue2 = 150, 202
+        if amp == 0:
+            # left amplifier without the edge box
+            left = np.arange(row_ini * 16, row_end * 16)[::16]
+            idx_left = []
+            for L in left:
+                # avoid the edge
+                idx_left += list(np.arange(L + 1, L + 8))
+            idx = np.array(idx_left)
+        elif amp == 1:
+            # right amplifier without the edge box
+            right = np.arange(row_ini*16 + 8, row_end*16 + 8)[::16]
+            idx_right = []
+            for R in right:
+                # avoid the edge
+                idx_right += list(np.arange(R, R + 8))
+            idx = np.array(idx_right)
+        else:
+            logging.error("Error in amplifier selection")
+            exit(1)
+        # Define the masks using the above indices
+        row_mask_aux = np.ones((NCCD, NBOX), dtype=bool)
+        row_mask_aux[:, idx] = False
+        row_plot = np.tile(np.arange(NBOX), NCCD).reshape(NCCD, NBOX)
+        row_plot = ma.array(row_plot, mask=row_mask_aux)
+        # For the boxes, I need to select only left side, using a mask
+        # Apply the mask to the boxes-statistics and db-info arrays
+        not_idx = np.ones((NCCD, NBOX),dtype=bool)
+        not_idx[:, idx] = False
+        data_sub = ma.array(data, mask=not_idx)
+        return data_sub, row_plot
+
+    def side1(self, ccd=None, amp=0, saveplot=True, suffix=None):
+        """ Options of plot 1, side by side per CCD
+        """
+        fnm1 = "stat_{0:02}_noOsc_16x128_medN.npy".format(CCD)
+        fnm2 = "stat_{0:02}_xtalked_16x128_medN.npy".format(CCD)
+        fnm3 = "stat_{0:02}_16x128_y4e1_medN.npy".format(CCD)
+        fnm = [fnm1, fnm2, fnm3]
+        # To create variable names from string
+        this_module = sys.modules[__name__]
+        for index,item in enumerate(fnm):
+            name = "aux_test_{0}".format(index + 1)
+            setattr(this_module, name, index)
+        # Retrieve only one amplifier, masked arrays
+        tmp1, tmp2, tmp3 = np.load(fnm1), np.load(fnm2), np.load(fnm3)
+        row_plot = None
+        d1, row_plot = Compare().sel_amplifier(tmp1, amp=amp)
+        d2, row_plot = Compare().sel_amplifier(tmp2, amp=amp)
+        d3, row_plot = Compare().sel_amplifier(tmp3, amp=amp)
+        # Define plot
+        plt.close("all")
+        fig, ax = plt.subplots(2, 3, figsize=(12, 8)) 
+        # Density histograms
+        # For CCD3, ywide 0.1
+        ywide = .1
+        kw0 = {
+            "bins": 100,
+            "cmap": "viridis",
+            "cmin": 1,
+            }
+        # For CCD3
+        # kw0.update({"range": [[0, 4096] , [0.807, 0.807 + ywide/4.]],})
+        kw0.update({"range": [[0, 4096] , [0.995, 0.995 + ywide/4.]],})
+        p1 = ax[0, 0].hist2d(row_plot.compressed().ravel(), 
+                            d1["avg_n"].compressed().ravel(),
+                            **kw0)
+        # For CCD3
+        # kw0.update({"range": [[0, 4096] , [0.94, 0.94 + ywide]],})
+        kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
+        p2 = ax[0, 1].hist2d(row_plot.compressed().ravel(), 
+                            d2["avg_n"].compressed().ravel(),
+                            **kw0)
+        # For CCD3
+        # kw0.update({"range": [[0, 4096] , [0.96, 0.96 + ywide]],})
+        kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
+        p3 = ax[0, 2].hist2d(row_plot.compressed().ravel(), 
+                            d3["avg_n"].compressed().ravel(),
+                            **kw0)
+        # Norm histograms
+        parameter = "norm"
+        xnorm1 = tmp1[parameter][:, 0]
+        xnorm2 = tmp2[parameter][:, 0]
+        xnorm3 = tmp3[parameter][:, 0]
+        kw_hist = {
+            "bins": "doane",# "auto",
+            "histtype": "stepfilled",
+            "align": "mid",
+            "orientation": "vertical",
+            "log": False,
+            "color": "gray",
+            }
+        h1 = ax[1, 0].hist(xnorm1, **kw_hist)
+        h2 = ax[1, 1].hist(xnorm2, **kw_hist)
+        h3 = ax[1, 2].hist(xnorm3, **kw_hist)
+        colors = ["gold", "lime", "cyan", "red", "gold"]
+        for ind, qx in enumerate([5, 25, 50, 75, 95]):
+            ax[1, 0].axvline(x=np.percentile(xnorm1, qx), c=colors[ind], 
+                            label="{0}%".format(qx))
+            ax[1, 1].axvline(x=np.percentile(xnorm2, qx), c=colors[ind], 
+                            label="{0}%".format(qx))
+            ax[1, 2].axvline(x=np.percentile(xnorm3, qx), c=colors[ind], 
+                            label="{0}%".format(qx))
+        # Setup legend for histograms
+        handles_ax1, labels_ax1 = ax[1, 0].get_legend_handles_labels()
+        handles_ax2, labels_ax2 = ax[1, 1].get_legend_handles_labels()
+        handles_ax3, labels_ax3 = ax[1, 2].get_legend_handles_labels()
+        kw_lab = {
+            "loc": "upper right",
+            "ncol": 1,
+            "markerscale": 2.1,
+            "frameon": True,
+            "fancybox": True,
+            "framealpha": 0.5,
+            "fontsize": 9,}
+        ax[1, 0].legend(handles_ax1, labels_ax1, **kw_lab)
+        ax[1, 1].legend(handles_ax2, labels_ax1, **kw_lab)
+        ax[1, 2].legend(handles_ax3, labels_ax1, **kw_lab)
+        # Colorbars
+        kw_cbar = {"orientation": "horizontal", "aspect": 50}
+        cb1 = plt.colorbar(p1[-1], ax=ax[0, 0], **kw_cbar)
+        cb1.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
+        cb1.set_label("N")
+        cb2 = plt.colorbar(p2[-1], ax=ax[0, 1], **kw_cbar)
+        cb2.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
+        cb2.set_label("N")
+        cb3 = plt.colorbar(p3[-1], ax=ax[0, 2], **kw_cbar)
+        cb3.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
+        cb3.set_label("N")
+        # Setup ticks
+        majorLocator_x0 = MultipleLocator(1024)
+        majorFormatter_x0 = FormatStrFormatter("%d")
+        minorLocator_x0 = MultipleLocator(128)
+        ax[0, 0].xaxis.set_minor_locator(minorLocator_x0)
+        ax[0, 0].xaxis.set_major_locator(majorLocator_x0)
+        ax[0, 0].xaxis.set_major_formatter(majorFormatter_x0)
+        ax[0, 1].xaxis.set_minor_locator(minorLocator_x0)
+        ax[0, 1].xaxis.set_major_locator(majorLocator_x0)
+        ax[0, 1].xaxis.set_major_formatter(majorFormatter_x0)
+        ax[0, 2].xaxis.set_minor_locator(minorLocator_x0)
+        ax[0, 2].xaxis.set_major_locator(majorLocator_x0)
+        ax[0, 2].xaxis.set_major_formatter(majorFormatter_x0)
+        # Labels
+        kw_lab = {"fontsize": 10, "color": "blue",}
+        ax[0, 0].set_title("xtalked, no overscan. Scale: 4X", **kw_lab)
+        ax[0, 1].set_title("xtalked. Scale: 1X", **kw_lab)
+        ax[0, 2].set_title("reduced. Scale: 1X", **kw_lab)
+        ax[0, 0].set_ylabel(r"$<x_{box}>_{norm}$")
+        ax[0 ,0].set_xlabel("rows")
+        ax[0, 1].set_xlabel("rows")
+        ax[0, 2].set_xlabel("rows")
+        ax[1, 0].set_ylabel("N")
+        ax[1, 0].set_xlabel("Norm value")
+        ax[1, 1].set_xlabel("Norm value")
+        ax[1, 2].set_xlabel("Norm value")
+        # For CCD3 plt.suptitle("CCD {0}, issue Amp".format(CCD))
+        plt.suptitle("CCD {0}, *non* issue Amp".format(CCD))
+
+        plt.subplots_adjust(left=0.06, bottom=0.06, right=0.98, top=0.90, 
+                        wspace=0.16, hspace=0.07)
+        if suffix is None:
+            suffix = "pid" + str(os.getpid())
+        if saveplot:
+            outname = "profileComp_{0:02}_{1}.png".format(ccd,suffix)
+            plt.savefig(outname, dpi=400, facecolor="w", edgecolor="w", 
+                    orientation="portrait", papertype=None, format="png", 
+                    transparent=False, bbox_inches=None, pad_inches=0.1, 
+                    frameon=None)
+        plt.show()
+
+    def side2(self, ccd=None, amp=0, saveplot=True, suffix=None):
+        """ Options of plot 2, side by side per CCD, only 2 sets
+        """
+        fnm1 = "stat_{0:02}_noOsc_16x128_medN.npy".format(CCD)
+        fnm2 = "stat_{0:02}_xtalked_16x128_medN.npy".format(CCD)
+        fnm = [fnm1, fnm2]
+        # Retrieve only one amplifier, masked arrays
+        tmp1, tmp2 = np.load(fnm1), np.load(fnm2)
+        row_plot = None
+        d1, row_plot = Compare().sel_amplifier(tmp1, amp=amp)
+        d2, row_plot = Compare().sel_amplifier(tmp2, amp=amp)
+        # Define plot
+        plt.close("all")
+        fig, ax = plt.subplots(2, 2, figsize=(8, 8)) 
+        # Density histograms
+        # For CCD3, ywide 0.1
+        # For CCD2, ywide = 6400
+        ywide = 6400
+        kw0 = {
+            "bins": 100,
+            "cmap": "viridis",
+            "cmin": 1,
+            }
+        # For CCD3
+        # kw0.update({"range": [[0, 4096] , [0.807, 0.807 + ywide/4.]],})
+        # kw0.update({"range": [[0, 4096] , [0.995, 0.995 + ywide/4.]],})
+        # For CCD2
+        # kw0.update({"range": [[0, 4096] , [2.34, 2.34 + ywide/4000.]],})
+        kw0.update({"range": [[0, 4096] , [-0.001, -0.00064]],})
+        p1 = ax[0, 0].hist2d(row_plot.compressed().ravel(), 
+                            d1["avg_n"].compressed().ravel(),
+                            **kw0)
+        # For CCD3
+        # kw0.update({"range": [[0, 4096] , [0.94, 0.94 + ywide]],})
+        # For CCD2
+        # kw0.update({"range": [[0, 4096] , [-8000, -8000 + ywide]],})
+        kw0.update({"range": [[0, 4096] , [1.8, 5]],})
+        p2 = ax[0, 1].hist2d(row_plot.compressed().ravel(), 
+                            d2["avg_n"].compressed().ravel(),
+                            **kw0)
+        # Norm histograms
+        parameter = "norm"
+        xnorm1 = tmp1[parameter][:, 0]
+        xnorm2 = tmp2[parameter][:, 0]
+        kw_hist = {
+            "bins": "doane",# "auto",
+            "histtype": "stepfilled",
+            "align": "mid",
+            "orientation": "vertical",
+            "log": False,
+            "color": "gray",
+            }
+        h1 = ax[1, 0].hist(xnorm1, **kw_hist)
+        h2 = ax[1, 1].hist(xnorm2, **kw_hist)
+        colors = ["gold", "lime", "cyan", "red", "gold"]
+        for ind, qx in enumerate([5, 25, 50, 75, 95]):
+            ax[1, 0].axvline(x=np.percentile(xnorm1, qx), c=colors[ind], 
+                            label="{0}%".format(qx))
+            ax[1, 1].axvline(x=np.percentile(xnorm2, qx), c=colors[ind], 
+                            label="{0}%".format(qx))
+        # Setup legend for histograms
+        handles_ax1, labels_ax1 = ax[1, 0].get_legend_handles_labels()
+        handles_ax2, labels_ax2 = ax[1, 1].get_legend_handles_labels()
+        kw_lab = {
+            "loc": "upper left",
+            "ncol": 1,
+            "markerscale": 2.1,
+            "frameon": True,
+            "fancybox": True,
+            "framealpha": 0.5,
+            "fontsize": 9,}
+        ax[1, 0].legend(handles_ax1, labels_ax1, **kw_lab)
+        ax[1, 1].legend(handles_ax2, labels_ax1, **kw_lab)
+        # Colorbars
+        kw_cbar = {"orientation": "horizontal", "aspect": 50}
+        cb1 = plt.colorbar(p1[-1], ax=ax[0, 0], **kw_cbar)
+        cb1.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
+        cb1.set_label("N")
+        cb2 = plt.colorbar(p2[-1], ax=ax[0, 1], **kw_cbar)
+        cb2.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
+        cb2.set_label("N")
+        # Setup ticks
+        majorLocator_x0 = MultipleLocator(1024)
+        majorFormatter_x0 = FormatStrFormatter("%d")
+        minorLocator_x0 = MultipleLocator(128)
+        ax[0, 0].xaxis.set_minor_locator(minorLocator_x0)
+        ax[0, 0].xaxis.set_major_locator(majorLocator_x0)
+        ax[0, 0].xaxis.set_major_formatter(majorFormatter_x0)
+        ax[0, 1].xaxis.set_minor_locator(minorLocator_x0)
+        ax[0, 1].xaxis.set_major_locator(majorLocator_x0)
+        ax[0, 1].xaxis.set_major_formatter(majorFormatter_x0)
+        # Labels
+        kw_lab = {"fontsize": 10, "color": "blue",}
+        # ax[0, 0].set_title("xtalked, no overscan", **kw_lab)
+        ax[0, 0].set_title("xtalked, no overscan. Scale: ??", **kw_lab)
+        ax[0, 1].set_title("xtalked. Scale: 1X", **kw_lab)
+        ax[0, 0].set_ylabel(r"$<x_{box}>_{norm}$")
+        ax[0 ,0].set_xlabel("rows")
+        ax[0, 1].set_xlabel("rows")
+        ax[1, 0].set_ylabel("N")
+        ax[1, 0].set_xlabel("Norm value")
+        ax[1, 1].set_xlabel("Norm value")
+        # For CCD3 plt.suptitle("CCD {0}, issue Amp".format(CCD))
+        plt.suptitle("CCD {0}, *non* issue Amp".format(CCD))
+
+        plt.subplots_adjust(left=.1, bottom=0.06, right=0.98, top=0.90, 
+                        wspace=0.28, hspace=0.07)
+        if suffix is None:
+            suffix = "pid" + str(os.getpid())
+        if saveplot:
+            outname = "profileComp_{0:02}_{1}.png".format(ccd,suffix)
+            plt.savefig(outname, dpi=400, facecolor="w", edgecolor="w", 
+                    orientation="portrait", papertype=None, format="png", 
+                    transparent=False, bbox_inches=None, pad_inches=0.1, 
+                    frameon=None)
+        plt.show()
 
 class One():
     def one_ccd(self, fnm):
@@ -806,15 +1103,20 @@ if __name__ == "__main__":
     # 3      |    left (B)
     # 1      |    not victim
     # 6      |    not victim
-    CCD = 3
+    CCD = 2
     
+    C = Compare()
+    C.side2(ccd=CCD, amp=1, saveplot=False, suffix="AmpA")
+    # C.side1(ccd=CCD, amp=0, saveplot=False, suffix="AmpB")
+    
+
     # Histo = Tide(stat="stat_{0:02}_16x128_y4e1_medN.npy".format(CCD),
     #         db="info_{0:02}_16x128_y4e1_medN.npy".format(CCD))
     # Histo = Tide(stat="stat_{0:02}_xtalked_16x128_medN.npy".format(CCD),
     #         db="info_{0:02}_xtalked_16x128_medN.npy".format(CCD))
-    Histo = Tide(stat="stat_{0:02}_noOsc_16x128_medN.npy".format(CCD),
-             db="info_{0:02}_noOsc_16x128_medN.npy".format(CCD))
-    Histo.histo_param(ccd=CCD, suffix="noOsc_16x128_medN")
+    # Histo = Tide(stat="stat_{0:02}_noOsc_16x128_medN.npy".format(CCD),
+    #          db="info_{0:02}_noOsc_16x128_medN.npy".format(CCD))
+    # Histo.histo_param(ccd=CCD, suffix="noOsc_16x128_medN")
 
     # For RAW exposures with subtracted overscan and classical parameters
     # Tii = Tide(stat="stat_{0:02}_xtalked_16x128_medN.npy".format(CCD),
