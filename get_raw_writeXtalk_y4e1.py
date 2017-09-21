@@ -108,11 +108,14 @@ if __name__=="__main__":
         if (idx == 0) and (val.p):
             print "\nSample command line:\n{0}\n".format(out)
         wr.append(out)
+    #
+    # Temporary file (and filename) generator. Alternative to os.getpid()
     aux_name = tempfile.NamedTemporaryFile(
         mode="w+b", 
         prefix="xtalk_", 
         dir=os.getcwd(),
-        delete=False)
+        delete=True)
+    # As we only need the name and not the file, set delete to True
     aux_name = aux_name.name
     if (val.o is None):
         aux_name += ".csh"
