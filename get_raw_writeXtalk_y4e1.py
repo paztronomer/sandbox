@@ -8,12 +8,14 @@ import logging
 import time 
 import numpy as np
 import pandas as pd
+import argparse
+import tempfile
 import fitsio
 import despydb.desdbi as desdbi
 
 class Toolbox(object):    
     @classmethod
-    def dbquery(cls,toquery,outdtype,dbsection='db-desoper',help_txt=False):
+    def dbquery(cls, toquery, outdtype, dbsection='db-desoper', help_txt=False):
         '''the personal setup file .desservices.ini must be pointed by desfile
         DB section by default will be desoper
         '''
@@ -25,11 +27,11 @@ class Toolbox(object):
         cursor.execute(toquery)
         cols = [line[0].lower() for line in cursor.description]
         rows = cursor.fetchall()
-        outtab = np.rec.array(rows,dtype=zip(cols,outdtype))
+        outtab = np.rec.array(rows, dtype=zip(cols, outdtype))
         return outtab
 
     @classmethod
-    def rawexp(cls,expnum,root="/archive_data/desarchive"):
+    def rawexp(cls, expnum, root="/archive_data/desarchive"):
         """With the expnum, returns the full path
         """
         q = "select fai.path,fai.filename,fai.compression"
@@ -37,40 +39,89 @@ class Toolbox(object):
         q += " where e.expnum={0}".format(expnum)
         q += " and e.filename=fai.filename"
         dt = ["a100","a50","a10"]
-        res = Toolbox.dbquery(q,dt)
+        res = Toolbox.dbquery(q, dt)
         if res["path"].shape[0] > 1:
             logging.error("More than one occurrence for {0}".format(expnum))
             exit(1)
         p = os.path.join(root,res["path"][0])
-        p = os.path.join(p,res["filename"][0]+res["compression"][0])
+        p = os.path.join(p,res["filename"][0] + res["compression"][0])
         aux_fnm = res["filename"][0]
         aux_fnm = aux_fnm[:aux_fnm.find(".fits")]
-        return p,aux_fnm
+        return p, aux_fnm
 
 if __name__=="__main__":
-    fname = sys.argv[1]
-    print "Input table of expnums: {0}".format(fname)
-    df = pd.read_csv(fname)
+    gral = "Script to use a set of exposure numbers (EXPNUM) to query the DB,"
+    gral += " and with the available images construct a bash script to run"
+    gral += " crosstalk. If the \'modified\' crosstalk version is employed"
+    gral += " (RGruendl version), then CCD02 overscan can be turned off."
+    arg = argparse.ArgumentParser(description=gral) 
+    h1 = "Exposure list, having \'EXPNUM\' as column name. File can contain"
+    h1 += " mutiple columns"
+    arg.add_argument("exposures", help=h1)
+    h2 = "Flag to turn-off the overscan subtraction on CCD02 only"
+    arg.add_argument("-n", help=h2, action="store_true")
+    h3 = "Suffix to add at the end of the output filenames"
+    arg.add_argument("-s", help=h3, metavar="")
+    h4 = "Filename of the crosstalk coefficients matrix."
+    h4 += " Default: DECam_20130606.xtalk"
+    arg.add_argument("-c", help=h4, metavar="")
+    h5 = "List of space-separated CCD numbers to be xtalked."
+    h5 += " Default is to use all"
+    arg.add_argument("-l", help=h5, metavar="", nargs="*", type=int)
+    h6 = "Print a sample command line, with the selected parameters"
+    arg.add_argument("-p", help=h6, action="store_true")
+    h7 = "Suffix to add to the bash/csh script filename"
+    arg.add_argument("-o", help=h7, metavar="")
+    val = arg.parse_args()
+    # Arguments
+    aux_null = val.n
+    if isinstance(val.l, list):
+        ccds = ",".join(map(str, val.l))
+    else:
+        ccds = val.l
+    # Reading table of expnums 
+    df = pd.read_csv(val.exposures)
     wr = []
     for idx,row in df.iterrows():
         route,aux = Toolbox.rawexp(row["EXPNUM"])
         one = "DECam_crosstalk"
-        two = " " + aux + "%02d_xtalked.fits" 
-        # Two options: no overscan and the traditional
-        # two += + "_noOver"
+        if (val.s is None):
+            two = " " + aux + "_%02d.fits"
+        else:
+            two = " " + aux + "_%02d_{0}.fits".format(val.s)
         two += " -overscansample 1  -overscanfunction 0  -overscantrim 5"
+        if aux_null:
+            # For no overscan CCD2 only
+            two += " -null_overscan_ccd2"
         two += " -replace /archive_data/desarchive/OPS/config/20170531/"
         two += "finalcut/20170531_DES_header_update.20140303"
         two += " -verbose 3  -photflag 1"
-        two += " -crosstalk /archive_data/desarchive/OPS/cal/xtalk/20130606/"
-        two += "DECam_20130606.xtalk"
-        two += " -ccdlist 2,3"
-        two += " > log/log_{0:08}.txt".format(row["EXPNUM"])
+        if (val.c is None):
+            two += " -crosstalk /archive_data/desarchive/OPS/cal/xtalk/"
+            two += "20130606/DECam_20130606.xtalk"
+        else:
+            two += " -crosstalk {0}".format(val.c)
+        if (ccds is not None):
+            two += " -ccdlist {0}".format(ccds)
+        two += " > log/log_{0:08}_pid{1}.txt".format(row["EXPNUM"], os.getpid())
         out = one + " " + route + two
+        if (idx == 0) and (val.p):
+            print "\nSample command line:\n{0}\n".format(out)
         wr.append(out)
-    with open("{0}.csh".format(os.getpid()),"wr") as w:
+    aux_name = tempfile.NamedTemporaryFile(
+        mode="w+b", 
+        prefix="xtalk_", 
+        dir=os.getcwd(),
+        delete=False)
+    aux_name = aux_name.name
+    if (val.o is None):
+        aux_name += ".csh"
+    else:
+        aux_name += "_{0}.csh".format(val.o)
+    #
+    with open(aux_name, "wr") as w:
         w.write("#!/bin/csh \n")
         for x in wr:
             w.write(x)
             w.write("\n")
-    print "Done!"
+    print "Done!\n{0}".format(time.ctime())
