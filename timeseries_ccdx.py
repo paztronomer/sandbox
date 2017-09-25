@@ -185,7 +185,7 @@ class Stats():
         of 2D arrays
         w0: width of dimension 0, for the subregion
         w1: width of dimension 1, for the subregion
-        Also creates an ascii of the coordinates as a way to easuly check
+        Also creates an ascii of the coordinates as a way to easily check
         positions
         """
         #limits for the subsections
@@ -286,14 +286,19 @@ if __name__=="__main__":
     g = ecl.add_mutually_exclusive_group()
     g.add_argument("--csv", help="Table with DB info (if needed)", metavar="")
     g.add_argument("--loc", help="Path to the CCD fits (if needed)",
-                   metavar="", nargs="?", const=tmp, type=str)
+                   metavar="", nargs="?", default=tmp, type=str)
     ecl.add_argument("--d0", help="Width of sub-boxes for dim0 (longer axis)",
-                    metavar="", default=16, type=int)
+                     metavar="", default=16, type=int)
     ecl.add_argument("--d1", help="Width of sub-boxes for dim1 (shorter axis)",
-                    metavar="", default=128, type=int)
+                     metavar="", default=128, type=int)
     ecl.add_argument("--suffix", help="Suffix for the output filenames",
-                    metavar="")
+                     metavar="")
     nmsp = ecl.parse_args()
+    # 
+    print "\nInputs to the script:"
+    v = vars(nmsp)
+    for kx, vx in v.iteritems():
+        print "\t{0:8}: {1}".format(kx, vx)
     #For skytemplates y4e1 I used: --csv redpixcor.csv
     kwin = {"table": nmsp.csv, "suffix": nmsp.suffix, "opt": nmsp.norm}
     kwin.update({"loca": nmsp.loc, "ccdnum": nmsp.ccd})
