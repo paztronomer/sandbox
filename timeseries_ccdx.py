@@ -83,8 +83,22 @@ class Stack():
                     f1 = lambda x: int(x) - 1
                     dsec = fp.header["DATASEC"].strip().strip("[").strip("]")
                     dsec = map(f1, dsec.replace(":", ",").split(","))
-                    fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
-                                        dsec[0] : dsec[1]+1] 
+                    # check if reads in reverse way
+                    if (dsec[2] > dsec[3]) and (dsec[0] < dsec[1]):
+                        fp_ccd_aux = fp.ccd[dsec[3] : dsec[2]+1, 
+                                            dsec[0] : dsec[1]+1] 
+                    elif (dsec[2] > dsec[3]) and (dsec[0] > dsec[1]):
+                        fp_ccd_aux = fp.ccd[dsec[3] : dsec[2]+1, 
+                                            dsec[1] : dsec[0]+1] 
+                    elif (dsec[2] < dsec[3]) and (dsec[0] > dsec[1]):
+                        fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
+                                            dsec[1] : dsec[0]+1] 
+                    elif (dsec[2] < dsec[3]) and (dsec[1] > dsec[0]):
+                        fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
+                                            dsec[0] : dsec[1]+1] 
+                    else:
+                        print "ERROR in DATA sectioning indices"
+                        exit(1)
                     fp_ccd_aux += 1.
                 else:
                     fp_ccd_aux = fp.ccd
