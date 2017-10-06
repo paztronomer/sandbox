@@ -41,7 +41,8 @@ class FitsImage():
 class Stack():
     def __init__(
             self, suffix=None, opt=None, table=None, loca=None,
-            ccdnum=None, width_dim0=None, width_dim1=None, raw=None):
+            ccdnum=None, width_dim0=None, width_dim1=None, raw=None,
+            region_x=None, region_y=None):
         if table is not None:
             self.df = pd.read_csv(table, sep=",")
         else:
@@ -59,6 +60,31 @@ class Stack():
         self.w0 = width_dim0
         self.w1 = width_dim1
         self.raw = raw
+        self.region_x = region_x
+        self.region_y = region_y
+
+    def norm_area(self, arr):
+        """ Method to restrict (or not) the normalization value calculation 
+        to a specific region on the CCD array. If using a raw CCD, must be
+        cautious about it
+        Inputs:
+        - the whole CCD array
+        Returns:
+        - a subsection of the CCD array to be used for norm calculation
+        """
+        print arr.shape
+        exit()
+        if (self.raw):
+            msg_w = "RAW image in use, with dimensions {0}".format(arr.shape)
+            logging.warning(msg_w)
+        if ( ~(self.region_x is None) and ~(self.region_y is None)):
+            pass
+        elif ( ~(self.region_x is None) and (self.region_y is None)):
+            pass
+        elif ( (self.region_x is None) and ~(self.region_y is None)):
+            pass
+        else:
+            pass
 
     def one(self, root="/archive_data/desarchive"):
         """Runs the code over crosstalked CCDs, using paths to their 
@@ -107,10 +133,11 @@ class Stack():
                 qx = Stats().quad(fp_ccd_aux, w0=self.w0, w1=self.w1)
                 #here call the stats methods
                 #Usual normalization is norm=np.median(fp.ccd))
+                use4norm = self.norm_area(fp_ccd_aux)
                 if self.opt == 1:
-                    norm_x = np.median(fp_ccd_aux)
+                    norm_x = np.median(use4norm)
                 elif self.opt == 2:
-                    norm_x = np.mean(fp_ccd_aux)
+                    norm_x = np.mean(use4norm)
                 elif self.opt == 3:
                     norm_x = None
                 else:
@@ -158,19 +185,34 @@ class Stack():
                                    ("exptime", "f4")])
                     hdr = np.array([tuple(h)], dtype=dt)
                     if self.raw:
-                        f1 = lambda x: int(x)-1
-                        dsec = f.header["DATASEC"].strip().strip("[").strip("]")
+                        f1 = lambda x: int(x) - 1
+                        dsec = fp.header["DATASEC"].strip().strip("[").strip("]")
                         dsec = map(f1, dsec.replace(":", ",").split(","))
-                        f_ccd_aux = f.ccd[dsec[2] : dsec[3]+1,
-                                          dsec[0] : dsec[1]+1] 
-                        f_ccd_aux += 1.
+                        # check if reads in reverse way
+                        if (dsec[2] > dsec[3]) and (dsec[0] < dsec[1]):
+                            fp_ccd_aux = fp.ccd[dsec[3] : dsec[2]+1, 
+                                                dsec[0] : dsec[1]+1] 
+                        elif (dsec[2] > dsec[3]) and (dsec[0] > dsec[1]):
+                            fp_ccd_aux = fp.ccd[dsec[3] : dsec[2]+1, 
+                                                dsec[1] : dsec[0]+1] 
+                        elif (dsec[2] < dsec[3]) and (dsec[0] > dsec[1]):
+                            fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
+                                                dsec[1] : dsec[0]+1] 
+                        elif (dsec[2] < dsec[3]) and (dsec[1] > dsec[0]):
+                            fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
+                                                dsec[0] : dsec[1]+1] 
+                        else:
+                            print "ERROR in DATA sectioning indices"
+                            exit(1)
+                        fp_ccd_aux += 1.
                     else:
-                        f_ccd_aux = f.ccd
+                        fp_ccd_aux = fp.ccd
                     qx = Stats().quad(f_ccd_aux, w0=self.w0, w1=self.w1)
+                    use4norm = self.norm_area(fp_ccd_aux)
                     if self.opt == 1:
-                        norm_x = np.median(f_ccd_aux)
+                        norm_x = np.median(use4norm)
                     elif self.opt == 2:
-                        norm_x = np.mean(f_ccd_aux)
+                        norm_x = np.mean(use4norm)
                     elif self.opt == 3:
                         norm_x = None
                     else:
@@ -307,6 +349,10 @@ if __name__=="__main__":
                      metavar="", default=128, type=int)
     ecl.add_argument("--suffix", help="Suffix for the output filenames",
                      metavar="")
+    h_subx = "Shorter axis region to be used for calculate normalization value" 
+    ecl.add_argument("--subx", help=h_subx, metavar="", nargs=2, type=int)
+    h_suby = "Larger axis region to be used for calculate normalization value" 
+    ecl.add_argument("--suby", help=h_suby, metavar="", nargs=2, type=int)
     nmsp = ecl.parse_args()
     # 
     print "\nInputs to the script:"
@@ -318,6 +364,7 @@ if __name__=="__main__":
     kwin.update({"loca": nmsp.loc, "ccdnum": nmsp.ccd})
     kwin.update({"width_dim0": nmsp.d0, "width_dim1": nmsp.d1})
     kwin.update({"raw": nmsp.raw})
+    kwin.update({"region_x": nmsp.subx, "region_y": nmsp.suby})
     if nmsp.csv is not None:
         Stack(**kwin).one()
     elif nmsp.loc is not None:
