@@ -60,8 +60,26 @@ class Stack():
         self.w0 = width_dim0
         self.w1 = width_dim1
         self.raw = raw
-        self.region_x = region_x
-        self.region_y = region_y
+        # If region_x, region_y are indices, must subtract 1 to get then in the
+        # real indices range
+        m_sub = "All \'--subx\', \'--suby\' values should be"
+        m_sub += " greater than 0 and in ascending order."
+        if (region_x is None):
+            self.region_x = region_x
+        else:
+            if (all(x>0 for x in region_x) and (region_x[0] < region_x[1])):
+                self.region_x = map(lambda x: x-1, region_x)
+            else:
+                logging.error(m_sub)
+                exit(1)
+        if (region_y is None):
+            self.region_y = region_y
+        else:
+            if (all(y>0 for y in region_y) and (region_y[0] < region_y[1])):
+                self.region_y = map(lambda y: y-1, region_y)
+            else:
+                logging.error(m_sub)
+                exit(1) 
 
     def norm_area(self, arr):
         """ Method to restrict (or not) the normalization value calculation 
@@ -72,19 +90,21 @@ class Stack():
         Returns:
         - a subsection of the CCD array to be used for norm calculation
         """
-        print arr.shape
-        exit()
+        # Remember shape of typical DECam CCD, after removing bias/prescan/
+        # postscan is arr.shape = (4096, 2048)
         if (self.raw):
             msg_w = "RAW image in use, with dimensions {0}".format(arr.shape)
             logging.warning(msg_w)
-        if ( ~(self.region_x is None) and ~(self.region_y is None)):
-            pass
-        elif ( ~(self.region_x is None) and (self.region_y is None)):
-            pass
-        elif ( (self.region_x is None) and ~(self.region_y is None)):
-            pass
+        if ( not (self.region_x is None) and not (self.region_y is None)):
+            aux = arr[self.region_y[0] : self.region_y[1],
+                      self.region_x[0] : self.region_x[1]]
+        elif ( not (self.region_x is None) and (self.region_y is None)):
+            aux = arr[:, self.region_x[0] : self.region_x[1]]
+        elif ( (self.region_x is None) and not (self.region_y is None)):
+            aux = arr[self.region_y[0] : self.region_y[1], :]
         else:
-            pass
+            aux = arr
+        return aux
 
     def one(self, root="/archive_data/desarchive"):
         """Runs the code over crosstalked CCDs, using paths to their 
@@ -186,29 +206,29 @@ class Stack():
                     hdr = np.array([tuple(h)], dtype=dt)
                     if self.raw:
                         f1 = lambda x: int(x) - 1
-                        dsec = fp.header["DATASEC"].strip().strip("[").strip("]")
+                        dsec = f.header["DATASEC"].strip().strip("[").strip("]")
                         dsec = map(f1, dsec.replace(":", ",").split(","))
                         # check if reads in reverse way
                         if (dsec[2] > dsec[3]) and (dsec[0] < dsec[1]):
-                            fp_ccd_aux = fp.ccd[dsec[3] : dsec[2]+1, 
-                                                dsec[0] : dsec[1]+1] 
+                            f_ccd_aux = f.ccd[dsec[3] : dsec[2]+1, 
+                                              dsec[0] : dsec[1]+1] 
                         elif (dsec[2] > dsec[3]) and (dsec[0] > dsec[1]):
-                            fp_ccd_aux = fp.ccd[dsec[3] : dsec[2]+1, 
-                                                dsec[1] : dsec[0]+1] 
+                            f_ccd_aux = f.ccd[dsec[3] : dsec[2]+1, 
+                                              dsec[1] : dsec[0]+1] 
                         elif (dsec[2] < dsec[3]) and (dsec[0] > dsec[1]):
-                            fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
-                                                dsec[1] : dsec[0]+1] 
+                            f_ccd_aux = f.ccd[dsec[2] : dsec[3]+1, 
+                                              dsec[1] : dsec[0]+1] 
                         elif (dsec[2] < dsec[3]) and (dsec[1] > dsec[0]):
-                            fp_ccd_aux = fp.ccd[dsec[2] : dsec[3]+1, 
-                                                dsec[0] : dsec[1]+1] 
+                            f_ccd_aux = f.ccd[dsec[2] : dsec[3]+1, 
+                                              dsec[0] : dsec[1]+1] 
                         else:
                             print "ERROR in DATA sectioning indices"
                             exit(1)
-                        fp_ccd_aux += 1.
+                        f_ccd_aux += 1.
                     else:
-                        fp_ccd_aux = fp.ccd
+                        f_ccd_aux = f.ccd
                     qx = Stats().quad(f_ccd_aux, w0=self.w0, w1=self.w1)
-                    use4norm = self.norm_area(fp_ccd_aux)
+                    use4norm = self.norm_area(f_ccd_aux)
                     if self.opt == 1:
                         norm_x = np.median(use4norm)
                     elif self.opt == 2:
@@ -350,8 +370,10 @@ if __name__=="__main__":
     ecl.add_argument("--suffix", help="Suffix for the output filenames",
                      metavar="")
     h_subx = "Shorter axis region to be used for calculate normalization value" 
+    h_subx += ". Minimum value=1"
     ecl.add_argument("--subx", help=h_subx, metavar="", nargs=2, type=int)
     h_suby = "Larger axis region to be used for calculate normalization value" 
+    h_suby += ". Minimum value=1"
     ecl.add_argument("--suby", help=h_suby, metavar="", nargs=2, type=int)
     nmsp = ecl.parse_args()
     # 
