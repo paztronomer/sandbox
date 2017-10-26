@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from numpy import ma
 import datetime
+import logging
 import fitsio
 import matplotlib.pyplot as plt
 from matplotlib.dates import MonthLocator, DayLocator, DateFormatter
@@ -778,9 +779,21 @@ class Compare():
     """ Ad-hoc class to plot side-by-side the profiles and results on the same
     scale, for the different reductions
     """
-    def sel_amplifier(self, data, amp=None, ccdnum=None, NCCD=623, NBOX=4096):
+
+    def sel_amplifier(self, data, amp=None, ccdnum=None, NCCD=623, NBOX=4096,
+                      column=None, Nrow=256, Ncol=16):
         """ Receives the entire CCD, and select only one amplifier. Returns
         a masked array of the original.
+        Inputs
+        - amp: str, either 'A' or 'B'
+        - ccdnum: int. Both ccdnum and amp are used to get the AMPSEC 
+        - NCCD: number of CCDs to mask. 
+        - NBOX: number of boxes per CCD. Both NBOX and NCCD are used to 
+        construct the mask
+        - column: None, list or int. Selection of columns to be used for mask
+        construction. Goues from 0 to Ncol-1
+        - Nrow: Number of rows on which the CCD is divided
+        - Ncol: Number of columns on which the CCD is divided
         """
         print "Using (expecting) {0} CCDs".format(NCCD)
         # Here use the table to get if the amplifier is at the left or right
@@ -822,27 +835,52 @@ class Compare():
         # Distinguish per amplifier
         # Giving the binnig of 128 x 16 pixels, the amount of rows (larger dim)
         # is 256, and the amount of columns (shorter dim) is 16
-        row_ini, row_end = 0, 256
+        row_ini, row_end = 0, Nrow
         # By eye, we can say the bump is mostly located at rows = 150 to 202
         if amp_lr == 0:
             # left amplifier without the edge box
-            left = np.arange(row_ini * 16, row_end * 16)[::16]
+            left = np.arange(row_ini * Ncol, row_end * Ncol)[::Ncol]
             idx_left = []
             for L in left:
-                # avoid the edge
-                idx_left += list(np.arange(L + 1, L + 8))
+                if (column is None):
+                    # avoid the edge
+                    idx_left += list(np.arange(L + 1, L + int(Ncol/2)))
+                elif isinstance(column, int):
+                    # select only one column
+                    idx_left += [L + column]
+                elif isinstance(column, list):
+                    for item in column:
+                        idx_left += [L + item]
+                else:
+                    logging.error("Column must be either None, list or int")
+                    exit(1)
             idx = np.array(idx_left)
+            # sort the array
+            idx = np.sort(idx)
         elif amp_lr == 1:
             # right amplifier without the edge box
-            right = np.arange(row_ini*16 + 8, row_end*16 + 8)[::16]
+            right = np.arange(row_ini*Ncol + int(Ncol/2), 
+                              row_end*Ncol + int(Ncol/2))[::Ncol]
             idx_right = []
             for R in right:
-                # avoid the edge
-                idx_right += list(np.arange(R, R + 8))
+                if (column is None):
+                    # avoid the edge
+                    idx_right += list(np.arange(R, R + int(Ncol/2)))
+                elif isinstance(column, int):
+                    # select only one column
+                    idx_right += [R + column]
+                elif isinstance(column, list):
+                    for item in column:
+                        idx_right += [R + item]
+                else:
+                    logging.error("Column must be either None, list or int")
+                    exit(1)
             idx = np.array(idx_right)
+            idx = np.sort(idx)
         else:
             logging.error("Error in amplifier selection")
             exit(1)
+        
         # Define the masks using the above indices
         row_mask_aux = np.ones((NCCD, NBOX), dtype=bool)
         row_mask_aux[:, idx] = False
@@ -1396,21 +1434,46 @@ class Compare():
         Lower row contains the histogram of the values used to normalize the
         boxes, usually the median of the values per CCD.
         """
-        # region = "reg2"
-        if (region is None):
-            fnm1 = "stat_{0:02}_16x128_medN_v2.npy".format(CCD)
-            fnm2 = "stat_{0:02}_16x128_medN_v2.A.npy".format(CCD)
-            fnm3 = "stat_{0:02}_16x128_medN_v2.B.npy".format(CCD)
-            fnm4 = "stat_{0:02}_16x128_medN_v2.C.npy".format(CCD)
-            fnm5 = "stat_{0:02}_16x128_medN_v2.D.npy".format(CCD)
-            fnm6 = "stat_{0:02}_16x128_medN_normal.npy".format(CCD)
-        else:
-            fnm1 = "stat_{0:02}_16x128_medN_v2_{1}.npy".format(CCD, region)
-            fnm2 = "stat_{0:02}_16x128_medN_v2.A_{1}.npy".format(CCD, region)
-            fnm3 = "stat_{0:02}_16x128_medN_v2.B_{1}.npy".format(CCD, region)
-            fnm4 = "stat_{0:02}_16x128_medN_v2.C_{1}.npy".format(CCD, region)
-            fnm5 = "stat_{0:02}_16x128_medN_v2.D_{1}.npy".format(CCD, region)
-            fnm6 = "stat_{0:02}_16x128_medN_normal.npy".format(CCD)
+        if False:
+            if (region is None):
+                fnm1 = "stat_{0:02}_16x128_medN_v2.npy".format(CCD)
+                fnm2 = "stat_{0:02}_16x128_medN_v2.A.npy".format(CCD)
+                fnm3 = "stat_{0:02}_16x128_medN_v2.B.npy".format(CCD)
+                fnm4 = "stat_{0:02}_16x128_medN_v2.C.npy".format(CCD)
+                fnm5 = "stat_{0:02}_16x128_medN_v2.D.npy".format(CCD)
+                fnm6 = "stat_{0:02}_16x128_medN_normal.npy".format(CCD)
+            else:
+                fnm1 = "stat_{0:02}_16x128_medN_v2_{1}.npy".format(CCD, region)
+                fnm2 = "stat_{0:02}_16x128_medN_v2.A_{1}.npy".format(CCD, region)
+                fnm3 = "stat_{0:02}_16x128_medN_v2.B_{1}.npy".format(CCD, region)
+                fnm4 = "stat_{0:02}_16x128_medN_v2.C_{1}.npy".format(CCD, region)
+                fnm5 = "stat_{0:02}_16x128_medN_v2.D_{1}.npy".format(CCD, region)
+                fnm6 = "stat_{0:02}_16x128_medN_normal.npy".format(CCD)
+            fnm = [fnm1, fnm2, fnm3, fnm4, fnm5, fnm6]
+        if False:
+            fnm1 = "stat_{0:02}_noOsc02_16x128_medN_v2.E_reg3.npy".format(CCD)
+            fnm2 = "stat_{0:02}_noOsc02_16x128_medN_v2.F_reg3.npy".format(CCD)
+            fnm3 = "stat_{0:02}_noOsc02_16x128_medN_v2.G_reg3.npy".format(CCD)
+            fnm4 = "stat_{0:02}_noOsc02_16x128_medN_v2.H_reg3.npy".format(CCD)
+            fnm5 = "stat_{0:02}_noOsc02_16x128_medN_v2.B_reg3.npy".format(CCD)
+            # v1 has unaltered coefficients for ccd03B - ccd02B
+            # fnm6 = "stat_{0:02}_noOsc02_16x128_medN_v1.npy".format(CCD)
+            fnm6 = "stat_{0:02}_noOsc02_16x128_medN_unalt_reg3.npy".format(CCD)
+        if False:
+            fnm1 = "stat_{0:02}_noOsc02_16x128_medN_v2.E.npy".format(CCD)
+            fnm2 = "stat_{0:02}_noOsc02_16x128_medN_v2.F.npy".format(CCD)
+            fnm3 = "stat_{0:02}_noOsc02_16x128_medN_v2.G.npy".format(CCD)
+            fnm4 = "stat_{0:02}_noOsc02_16x128_medN_v2.H.npy".format(CCD)
+            fnm5 = "stat_{0:02}_noOsc02_16x128_medN_v2.B.npy".format(CCD)
+            # v1 has unaltered coefficients for ccd03B - ccd02B
+            fnm6 = "stat_{0:02}_noOsc02_16x128_medN_v1.npy".format(CCD)
+        if False:
+            fnm1 = "stat_{0:02}_noOsc02_16x128_medN_v2.G_{1}.npy".format(CCD, region)
+            fnm2 = "stat_{0:02}_noOsc02_16x128_medN_v2.H_{1}.npy".format(CCD, region)
+            fnm3 = "stat_{0:02}_noOsc02_16x128_medN_v2.B_{1}.npy".format(CCD, region)
+            fnm4 = "stat_{0:02}_noOsc02_16x128_medN_v2.C_{1}.npy".format(CCD, region)
+            fnm5 = "stat_{0:02}_noOsc02_16x128_medN_v2.D_{1}.npy".format(CCD, region)
+            fnm6 = "stat_{0:02}_noOsc02_16x128_medN_unalt_{1}.npy".format(CCD, region) 
         fnm = [fnm1, fnm2, fnm3, fnm4, fnm5, fnm6]
         # To create variable names from string
         this_module = sys.modules[__name__]
@@ -1420,20 +1483,26 @@ class Compare():
         print "{0}".format(this_module)
         # Retrieve only one amplifier, masked arrays
         tmp1, tmp2, tmp3 = np.load(fnm1), np.load(fnm2), np.load(fnm3)
-        tmp4, tmp5, tmp6 = np.load(fnm4), np.load(fnm5), np.load(fnm6)
+        tmp4, tmp5 = np.load(fnm4), np.load(fnm5)
+        tmp6 = np.load(fnm6)
         row_plot = None
-        d1, row_plot1 = Compare().sel_amplifier(tmp1, amp=amp, ccdnum=ccd)
-        d2, row_plot2 = Compare().sel_amplifier(tmp2, amp=amp, ccdnum=ccd)
-        d3, row_plot3 = Compare().sel_amplifier(tmp3, amp=amp, ccdnum=ccd)
-        d4, row_plot4 = Compare().sel_amplifier(tmp4, amp=amp, ccdnum=ccd)
-        d5, row_plot5 = Compare().sel_amplifier(tmp5, amp=amp, ccdnum=ccd)
-        d6, row_plot6 = Compare().sel_amplifier(tmp6, amp=amp, ccdnum=ccd)
+        #
+        # Here use the selection of column
+        dsel = {"amp": amp, "ccdnum": ccd, "column":column}
+        d1, row_plot1 = Compare().sel_amplifier(tmp1, **dsel)
+        d2, row_plot2 = Compare().sel_amplifier(tmp2, **dsel)
+        d3, row_plot3 = Compare().sel_amplifier(tmp3, **dsel)
+        d4, row_plot4 = Compare().sel_amplifier(tmp4, **dsel)
+        d5, row_plot5 = Compare().sel_amplifier(tmp5, **dsel)
+        d6, row_plot6 = Compare().sel_amplifier(tmp6, **dsel)
+        #
         # Define plot
         plt.close("all")
         fig, ax = plt.subplots(2, 6, figsize=(17, 8))
         # Density histograms
         # For CCD3, ywide 0.1
-        ywide = .1
+        # ywide = .1
+        ywide = 0.1
         # ywide = 60
         kw0 = {
             "bins": 100,
@@ -1444,25 +1513,48 @@ class Compare():
         # NOTE: to plot the med_n is OK even when no normalization is selected
         #       from the initial .npy file, because when norm=none then norm=1
         #
-        kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.95, 0.95 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.92, 0.92 + ywide]],})
+        kw0.update({"range": [[0, 4096] , [0.98, 0.98 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.7, 0.7 + 3.*ywide]],})
         # Use an UNIQUE range of values for the colorbar
-        kw0.update({"vmin": 0, "vmax": 1000})
+        kw0.update({"vmin": 0, "vmax": 250})
+        # kw0.update({"vmin": 0, "vmax": 900})
         p1 = ax[0, 0].hist2d(row_plot1.compressed().ravel(),
                              d1[yvalue].compressed().ravel(),
                              **kw0)
+        # kw0.update({"range": [[0, 4096] , [0.9, 0.9 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.7, 0.7 + 3.*ywide]],})
         p2 = ax[0, 1].hist2d(row_plot2.compressed().ravel(),
                              d2[yvalue].compressed().ravel(),
                              **kw0)
+        #
+        # kw0.update({"range": [[0, 4096] , [0.84, 0.84 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [1.02, 1.02 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.88, 0.88 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.4, 0.4 + 3.*ywide]],})
         p3 = ax[0, 2].hist2d(row_plot3.compressed().ravel(),
                              d3[yvalue].compressed().ravel(),
                              **kw0)
+        #
+        # kw0.update({"range": [[0, 4096] , [0.72, 0.72 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [1.06, 1.06 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.79, 0.79 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [-0.1, -0.1 + 5.*ywide]],})
         p4 = ax[0, 3].hist2d(row_plot4.compressed().ravel(),
                              d4[yvalue].compressed().ravel(),
                              **kw0)
+        #
+        # kw0.update({"range": [[0, 4096] , [0.45, 0.45 + 3.*ywide]],})
+        # kw0.update({"range": [[0, 4096] , [1.09, 1.09 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [-1.8, -1.8 + 15.*ywide]],})
         p5 = ax[0, 4].hist2d(row_plot5.compressed().ravel(),
                              d5[yvalue].compressed().ravel(),
                              **kw0)
-        # Normal processing
+        # Normal processing'
+        # kw0.update({"range": [[0, 4096] , [0.92, 0.92 + ywide]],})
+        # kw0.update({"range": [[0, 4096] , [0.94, 0.94 + ywide]],})
+        kw0.update({"range": [[0, 4096] , [0.98, 0.98 + ywide]],})
         p6 = ax[0, 5].hist2d(row_plot6.compressed().ravel(),
                              d6[yvalue].compressed().ravel(),
                              **kw0)
@@ -1517,6 +1609,7 @@ class Compare():
         ax[1, 3].set_xlim([np.percentile(xnorm4, 2), np.percentile(xnorm4, 98)])
         ax[1, 4].set_xlim([np.percentile(xnorm5, 2), np.percentile(xnorm5, 98)])
         ax[1, 5].set_xlim([np.percentile(xnorm6, 2), np.percentile(xnorm6, 98)])
+        #
         # ax[1, 0].set_xlim([70, 220])
         # ax[1, 1].set_xlim([70, 220])
         # ax[1, 2].set_xlim([70, 220])
@@ -1572,10 +1665,14 @@ class Compare():
             cb6.ax.tick_params(labelsize=7)
         else:
             kw_cbar = {"orientation": "horizontal", "aspect": 20}
+            # cb6 = plt.colorbar(p6[-1], ax=ax[0, 5], **kw_cbar)
+            # cb6.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
+            # cb6.set_label("N")
+            # Fontsize of the numbers!
+            # cb6.ax.tick_params(labelsize=7)
             cb6 = plt.colorbar(p6[-1], ax=ax[0, 5], **kw_cbar)
             cb6.patch.set_facecolor((0.2, 0.2, 0.2, 1.0))
             cb6.set_label("N")
-            # Fontsize of the numbers!
             cb6.ax.tick_params(labelsize=7)
         # Setup ticks
         majorLocator_x0 = MultipleLocator(1024)
@@ -1600,21 +1697,39 @@ class Compare():
         ax[0, 5].xaxis.set_major_locator(majorLocator_x0)
         ax[0, 5].xaxis.set_major_formatter(majorFormatter_x0)
         # For CCD3 plt.suptitle("CCD {0}, issue Amp".format(CCD))
-        ttext = "CCD {0}, amp B.".format(CCD)
+        ttext = "CCD {0}, amp {1}.".format(CCD, amp)
         ttext += " Comparison of xtalk --version 2-- coeffs variations."
-        ttext += " Overscan for all."
-        ttext += "\nCCD-median normalized imgs. (victim-source)"
+        ttext += " NO OVERSCAN SUBTRACTED FOR CCD02."
+        ttext += "\nMedian normalized imgs. (victim-source)"
         if not (region is None):
             ttext += "   >>> REGION: {0}".format(region)
+        if not (column is None):
+            ttext += "   >>> COLUMNS: {0}".format(",".join(map(str, column)))
         plt.suptitle(ttext)
         # Labels
         kw_lab = {"fontsize": 10, "color": "blue",}
-        ax[0, 0].set_title("vers2. (3B-2B)/20", **kw_lab)
-        ax[0, 1].set_title("vers2.A (3B-2B)*0", **kw_lab)
+        # ax[0, 0].set_title("vers2. (3B-2B)/20", **kw_lab)
+        # ax[0, 1].set_title("vers2.A (3B-2B)*0", **kw_lab)
+        # ax[0, 2].set_title("vers2.B (3B-2B)*20", **kw_lab)
+        # ax[0, 3].set_title("vers2.C (3B-2B)*40", **kw_lab)
+        # ax[0, 4].set_title("vers2.D (3B-2B)*100", **kw_lab)
+        # ax[0, 5].set_title("normal process", **kw_lab)
+        # ax[0, 0].set_title("vers2.E (3B-2B)*1.7", **kw_lab)
+        # ax[0, 1].set_title("vers2.F (3B-2B)*2.4", **kw_lab)
+        # ax[0, 2].set_title("vers2.G (3B-2B)*5", **kw_lab)
+        # ax[0, 3].set_title("vers2.H (3B-2B)*10", **kw_lab)
+        # ax[0, 4].set_title("vers2.B (3B-2B)*20. 3X HEIGHT", **kw_lab) 
+        # ax[0, 0].set_title("vers2.G (3B-2B)*5. 3X HEIGHT", **kw_lab)
+        # ax[0, 1].set_title("vers2.H (3B-2B)*10. 3X HEIGHT", **kw_lab)
+        # ax[0, 2].set_title("vers2.B (3B-2B)*20. 3X HEIGHT", **kw_lab)
+        # ax[0, 3].set_title("vers2.C (3B-2B)*40. 5X HEIGHT", **kw_lab)
+        # ax[0, 4].set_title("vers2.D (3B-2B)*100. 15X HEIGHT", **kw_lab)
+        ax[0, 0].set_title("vers2.G (3B-2B)*5", **kw_lab)
+        ax[0, 1].set_title("vers2.H (3B-2B)*10", **kw_lab)
         ax[0, 2].set_title("vers2.B (3B-2B)*20", **kw_lab)
         ax[0, 3].set_title("vers2.C (3B-2B)*40", **kw_lab)
         ax[0, 4].set_title("vers2.D (3B-2B)*100", **kw_lab)
-        ax[0, 5].set_title("normal process", **kw_lab)
+        ax[0, 5].set_title("unaltered xtalk", **kw_lab)
         kw_lab.update({"color": "red"})
         ax[0, 0].set_ylabel(r"$med({box})$")
         ax[0 ,0].set_xlabel("rows")
@@ -1631,7 +1746,7 @@ class Compare():
         ax[1, 4].set_xlabel(r"$med({box})$")
         ax[1, 5].set_xlabel(r"$med({box})$")
         plt.subplots_adjust(left=0.05, bottom=0.06, right=0.98, top=0.90,
-                        wspace=0.18, hspace=0.3)
+                            wspace=0.26, hspace=0.35)
         if suffix is None:
             suffix = "pid" + str(os.getpid())
         if saveplot:
@@ -1655,7 +1770,7 @@ class Explore():
                  suffix=None, region=None):
         self.ccd = ccd
         self.amp = amp
-        self.save_plot = saveplot
+        self.saveplot = saveplot
         self.suffix = suffix
         self.region = region
 
@@ -1747,20 +1862,20 @@ class Explore():
         xdate2 = [datetime.datetime.strptime(str(date), "%Y%m%d")
                   for date in y0]
         #
-        ax[0, 0].scatter(xdate, df1["sum"], c="royalblue", marker=".",
+        ax[0, 0].scatter(xdate, df1["sum"], c="deepskyblue", marker=".",
                          s=20)
-        ax[0, 1].scatter(xdate, df1["sum"], c="royalblue", marker=".",
+        ax[0, 1].scatter(xdate, df1["sum"], c="deepskyblue", marker=".",
                          s=20)
         ax[1, 0].scatter(xdate, df1["median"], c="goldenrod", marker="o", s=20)
         ax[1, 1].scatter(xdate, df1["median"], c="goldenrod", marker="o", s=20)
-        ax[0, 1].scatter(xdate2, y1, c="red", marker="s", s=20)
-        ax[1, 1].scatter(xdate2, y2, c="red", marker="s", s=20)
-        #
-        ax[0, 1].set_ylim([0.95*1792, 1.05*1792])
-        ax[1, 1].set_ylim([0.95, 1.05])
+        ax[0, 1].scatter(xdate2, y1, c="k", marker="^", s=10)
+        ax[1, 1].scatter(xdate2, y2, c="k", marker="^", s=10)
+        # from 0.95 to 1.05
+        ax[0, 1].set_ylim([0.97*1792, 1.01*1792])
+        ax[1, 1].set_ylim([0.97, 1.01])
         # 
         months = MonthLocator()
-        days = DayLocator(interval=7)
+        days = DayLocator(interval=10)
         dateFmt = DateFormatter("%b/%d/%y")
         months2 = MonthLocator()
         days2 = DayLocator()
@@ -1769,7 +1884,7 @@ class Explore():
         for xx in [ax[0,0], ax[0,1], ax[1,0], ax[1,1]]:
             xx.xaxis.set_major_locator(months)
             xx.xaxis.set_major_formatter(dateFmt)
-            xx.xaxis.set_minor_locator(days)
+            # xx.xaxis.set_minor_locator(days)
             xx.autoscale_view()
         kw_grid1 = {
             "color": "lightgray",
@@ -1780,35 +1895,30 @@ class Explore():
             XX.grid(**kw_grid1)
             xlabels_ax1 = XX.get_xticklabels()
             plt.setp(xlabels_ax1, rotation=30, fontsize=10)
-         
+        # For the titles
+        ax[0, 0].set_title("Sum of boxes (normalized) median, N values")
+        ax[0, 1].set_title("Zoom in")
+        ax[1, 0].set_title("Median of the boxes, 1 value per exposure")
+        ax[1, 1].set_title("Zoom in")
+        #
+        plt.subplots_adjust(left=0.12, bottom=0.09, right=0.90, top=0.95,
+                        wspace=0.20, hspace=0.35)
+        if self.suffix is None:
+            self.suffix = "pid" + str(os.getpid())
+        if self.saveplot:
+            if (self.region is None):
+                outname = "profile_explore_{0:02}_{1}.png".format(self.ccd, 
+                                                          self.suffix)
+            else:
+                outname = "profile_explore_{2}_{0:02}_{1}.png".format(self.ccd,
+                                                              self.suffix,
+                                                              self.region)
+            plt.savefig(outname, dpi=400, facecolor="w", edgecolor="w",
+                    orientation="portrait", papertype=None, format="png",
+                    transparent=False, bbox_inches=None, pad_inches=0.1,
+                    frameon=None)
         plt.show()
-
-
-        exit()
-        import vaex as vx
-        ds = vx.from_pandas(df2, name="test1")
-        ds.plot("row", "med_n", f="sum")
-        plt.show()
-
-        exit()
-
-        plt.scatter(row_plot1.compressed().ravel(),
-                    d1["med_n"].compressed().ravel(),
-                    c=auxN,
-                    marker=".")
-        plt.show()
-
-        exit()
-        plt.plot(x0,x1,'bo')
-        plt.show()
-        exit()
-
-        print d1.shape
-        print d1["med_n"][0].compressed().ravel().shape
-
-
-
-
+        return True
 
 
 class One():
@@ -1850,20 +1960,28 @@ if __name__ == "__main__":
     # headaches
     
     CCD = 3
-    amplifier = "B"
-
-    E = Explore(ccd=CCD, amp=amplifier, suffix=str(os.getpid()), 
-                saveplot=False,
-                region=None)
-    E.expl1()
-
-    exit()
+    amplifier = "A"
 
     C = Compare()
     C.side4(ccd=CCD, amp=amplifier, saveplot=False, 
-            region=None,
-            suffix=str(getpid()),
-            column=None)
+            region="reg3",
+            suffix="xtmodif_medN_amp{0}_col0_6_opt2".format(amplifier),
+            column=[0, 6])
+    
+    exit()
+    
+    for iter_col in range(8):
+        C.side4(ccd=CCD, amp=amplifier, saveplot=True, 
+                region="reg2",
+                suffix="xtmodif_medN_amp{1}_col{0}".format(iter_col, amplifier),
+                column=[iter_col])
+    
+
+    E = Explore(ccd=CCD, amp=amplifier, suffix=str(os.getpid()), 
+                saveplot=True,
+                region=None)
+    E.expl1()
+
     
     #C.side3(ccd=CCD, amp=amplifier, saveplot=False, suffix=str(os.getpid()))
     #
