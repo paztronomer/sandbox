@@ -15,37 +15,133 @@ import fitsio
 
 class FitsOpen():
     def __init__(self, fpath):
-        f = fitsio.FITS(fpath)
-        for x in f:
-            print x
-        self.ccd = np.copy(f.read())
-        print self.ccd
-        f.close()
+        """ Open the FITS and iterate over within extensions. Note once close()
+        is called, data cannot be accessed 
+        """
+        self.ccd = fitsio.FITS(fpath)
+        logging.info("Working on FITS file: {0}".format(fpath))
     
-    def get_ext():
-        pass
+    def get_ext(self, npix=120):
+        """ Go through the different extensions, select those not being FOCUS
+        CCDs and, after performing masking around left and right edges (tape
+        bumps), get some basic statistics
+        """
+        expnum = self.ccd[0].read_header()["EXPNUM"]
+        band = self.ccd[0].read_header()["FILTER"].split()[0]
+        # Get which header extensions are science. Remember first extension
+        # has not EXTNAME keyword
+        extnm, aux_idx = [], []
+        for idx, x in enumerate(self.ccd):
+            try:
+                extnm.append(x.read_header()["EXTNAME"].strip())
+                aux_idx.append(idx)
+            except:
+                pass
+        extnm, aux_idx = np.array(extnm), np.array(aux_idx)
+        condition = np.flatnonzero(np.core.defchararray.find(extnm, "F"))
+        extnm = extnm[condition]
+        aux_idx = aux_idx[condition]
+        # Using the indices of the extensions not being FOCUS CCDs, perform the
+        # simple statistics
+        res = []
+        for xtens in aux_idx:
+            tmp_h = self.ccd[xtens].read_header()
+            tmp_data = self.ccd[xtens].read()
+            # Double checking
+            if not (tmp_h["EXTNAME"].strip() in extnm):
+                logging.error("EXTNAME not in list")
+                exit(1)
+            # Use DATASEC{A,B} to get order and to trim. Save order
+            dsA = tmp_h["DATASECA"].strip("[").strip("]").replace(":", ",")
+            dsB = tmp_h["DATASECB"].strip("[").strip("]").replace(":", ",")
+            dsA = map(int, dsA.split(","))
+            dsB = map(int, dsB.split(","))
+            # Order AB = 1, BA = -1
+            if (dsA[0] < dsB[0]):
+                order = 1
+                dsA[0] += npix
+                dsB[1] -= npix
+            else:
+                order = -1
+                dsB[0] += npix
+                dsA[1] -= npix
+            ampA = tmp_data[dsA[2] : dsA[3], dsA[0] : dsA[1]]
+            ampB = tmp_data[dsB[2] : dsB[3], dsB[0] : dsB[1]]
+            # Basic statistics
+            stA = [expnum, band, tmp_h["CCDNUM"], "A", order] 
+            stA += self.basic_stat(ampA) 
+            stB = [expnum, band, tmp_h["CCDNUM"], "B", order] 
+            stB += self.basic_stat(ampB)
+            # Save results
+            res.append(stA)
+            res.append(stB)
+            # Order or reading
+            # NOTE: if need to read in reverse order, better than [::-1] is to
+            #       use np.flip(arr, axis)
+        # Call the FITS instace closing
+        self.close_fits()
+        logging.info("Done with calculations onf expnum: {0}".format(expnum))
+        return res
 
-class FitsImage():
-    def __init__(self, fname=None, ftab=None):
+    def basic_stat(self, x):
+        """ Method to perform basic statistics on the array
+        """
+        s1 = np.median(x.ravel())
+        s2 = np.mean(x.ravel())
+        s3 = np.sqrt(np.mean(np.square(x.ravel()))) 
+        s4 = np.sqrt(np.mean( np.square(x.ravel()) ) + 
+                     np.square( np.mean(x.ravel()) )) 
+        s5 = np.var(x)
+        s6 = np.min(x.ravel())
+        s7 = np.max(x.ravel())
+        s8 = np.percentile(x.ravel(), 5)
+        s9 = np.percentile(x.ravel(), 25)
+        s10 = np.percentile(x.ravel(), 75)
+        s11 = np.percentile(x.ravel(), 95)
+        return [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11]
+
+    def close_fits(self):
+        """  Closes the open fitsio.FITS instance
+        """
+        self.ccd.close()
+        return True
+
+
+class Loader():
+    def __init__(self, fname=None, ftab=None, suffix=None):
+        """ Loader of the files or tables, to be passed to the class who 
+        actually do the job
+        """
         if not (fname is None):
             self.tab = np.array([fname])
         if not (ftab is None):
             self.tab = np.loadtxt(ftab, dtype=str, unpack=True)
-        # In the future, change this dictionary for something more elegant
-        # fpath, keys, outnm = kdic["fpath"], kdic["keys"], kdic["outnm"]
-        # f = fitsio.FITS(fpath)
-        # x_header = fitsio.read_header(fpath)
-        # x_head = f[0].read_header()
-        # x_hdu = f[0].read()
-        # self.ccd = np.copy(x_hdu)
-        # self.header = x_head
-        # H = [x.read_header() for x in f]
-        # f.close()
-    
+        if (suffix is None):
+            self.suffix = str(uuid.uuid4())
+        else:
+            self.suffix=suffix
+
     def iter_f(self):
+        """ Simple iterator to call the FITS loader and save the results  
+        """
+        tmp = []
         for f in self.tab:
             FO = FitsOpen(f)
-            FO.get_ext()
+            tmp += FO.get_ext()
+        # The sum of allresults must be saved in CSV
+        logging.info("Checkpoint")
+        np.save("ccdstatistics_checkpoint.npy", np.array(tmp))
+        aux_tmp = zip(*tmp)
+        cols = ["ccdnum", "amp", "amp_order", "med", "avg", "rms", 
+                "uncert", "var", "min", "max", "p5", "p25",
+                "p75", "p95"]
+        d = dict()
+        for idx, item in enumerate(cols):
+            d[item] = aux_tmp[idx]
+        outnm = "ccdStat_{0}.csv".format(self.suffix)
+        pd.DataFrame(data=d).to_csv(outnm, index=False, header=True)
+        logging.info("Results were saved: {0}".format(outnm))
+        return True
 
     def play_multiproc(self):
         proc_lst = []
@@ -79,8 +175,8 @@ if __name__ == "__main__":
     d["fname"] = nn.fits
     d["ftab"] = nn.path
     
-    F = FitsImage(**d)
-    F.iter_f()
+    L = Loader(**d)
+    L.iter_f()
 
     # Set multi-workers, process or what I need
     # d = mp.Manager().dict()
