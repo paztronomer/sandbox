@@ -132,9 +132,9 @@ class Loader():
         logging.info("Checkpoint")
         np.save("ccdstatistics_checkpoint.npy", np.array(tmp))
         aux_tmp = zip(*tmp)
-        cols = ["ccdnum", "amp", "amp_order", "med", "avg", "rms", 
-                "uncert", "var", "min", "max", "p5", "p25",
-                "p75", "p95"]
+        cols = ["expnum", "band", "ccdnum", "amp", "amp_order", 
+                "med", "avg", "rms", "uncert", "var", "min", "max", 
+                "p5", "p25", "p75", "p95"]
         d = dict()
         for idx, item in enumerate(cols):
             d[item] = aux_tmp[idx]
