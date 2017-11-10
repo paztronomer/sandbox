@@ -7,6 +7,9 @@ import logging
 import numpy as np
 import pandas as pd
 
+# Pending:
+# implement append: numpy.lib.recfunctions.stack_arrays((a,b), autoconvert=True, usemask=False)
+
 try:
     import despydb.desdbi as desdbi
     #########################DES##############################
