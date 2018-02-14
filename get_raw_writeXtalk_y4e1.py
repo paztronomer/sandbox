@@ -54,6 +54,7 @@ if __name__=="__main__":
     gral += " and with the available images construct a bash script to run"
     gral += " crosstalk. If the \'modified\' crosstalk version is employed"
     gral += " (RGruendl version), then CCD02 overscan can be turned off."
+    gral += " \nIMPORTANT: header updater is NOT the last version."
     arg = argparse.ArgumentParser(description=gral) 
     h1 = "Exposure list, having \'EXPNUM\' as column name. File can contain"
     h1 += " mutiple columns"
@@ -72,6 +73,15 @@ if __name__=="__main__":
     arg.add_argument("-p", help=h6, action="store_true")
     h7 = "Suffix to add to the bash/csh script filename"
     arg.add_argument("-o", help=h7, metavar="")
+    h8 = "Method to evaluate overscan, for M=0 the whole row is used,"
+    h8 += " otherwise M represents the number of columns to be used."
+    h8 += " M=[-50, -1] cubic spline; M=0 line by line; M=[1, 50] Legendre."
+    h8 += " Default: 0. This option is equivalent to \'overscanfunction\'"
+    arg.add_argument("-of", help=h8, metavar="", default=0, type=int)
+    h9 = "Index to be used as the order for the Legendre polynomial, when"
+    h9 += " selected on the \'overscanfunction\'. Order=[1, 6]. Default: 1."
+    h9 += " This option is equivalent to \'overscanorder\'"
+    arg.add_argument("-oo", help=h9, metavar="", default=1, type=int)
     val = arg.parse_args()
     # Arguments
     aux_null = val.n
@@ -89,7 +99,11 @@ if __name__=="__main__":
             two = " " + aux + "_%02d.fits"
         else:
             two = " " + aux + "_%02d_{0}.fits".format(val.s)
-        two += " -overscansample 1  -overscanfunction 0  -overscantrim 5"
+        two += " -overscansample 1 -overscantrim 5"
+        # adding overscanfunction
+        two += " -overscanfunction {0}".format(val.of)
+        # adding overscanorder
+        two += " -overscanorder {0}".format(val.oo)
         if aux_null:
             # For no overscan CCD2 only
             two += " -null_overscan_ccd2"
