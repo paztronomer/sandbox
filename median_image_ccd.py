@@ -8,6 +8,10 @@ import fitsio
 import pickle
 import logging
 import argparse
+try:
+    import partial
+except:
+    pass
 import multiprocessing as mp
 import easyaccess as ea
 
@@ -280,17 +284,54 @@ def main_aux(pathlist=None, reqnum=None, band=None):
         return_counts=True,
     )
     # With the full paths open the files in parallel, read in boxes of
-    # 256 sq pix, stacking them
-    h = fpath[0]
-    x0, y0, x1, y1 = 0, 0, 256, 256
-    s = fits_section(h, x0, y0, x1, y1)
-    print(s)
+    # defined size sq pix, stacking them
+    # coo list contains [x0, y0, x1, y1]
+    coo = [0, 0, 256, 256]
+    # ===== In parallel
+    nproc = mp.cpu_count() - 1
+    if (nproc < 1):
+        nproc = 1
+    P1 = mp.Pool(processes=nproc)
+    kw_section = {
+        'coo' : coo,
+        'exp' : 0,
+        'delta' : 256,
+    }
+    chunk = int(4096 / kw_section['delta'] * 2048 / kw_section['delta'])
+    # Options for parallelize with additional args
+    try:
+        partial_aux = partial(fits_section, **kw_section)
+        t0 = time.time()
+        # map_async does not block the processes, and executes non-ordered
+        box_i = P1.map_async(partial_aux, fpath, chunk)
+        t1 = time.time()
+    except:
+        logging.warning('No available module: partial')
+        aux_list = [(fnm, 
+                     kw_section['coo'], 
+                     kw_section['exp'], 
+                     kw_section['delta']) for fnm in fpath]
+        t0 = time.time()
+        # map_async does not block the processes, and executes non-ordered
+        box_i = P1.map_async(fits_section, aux_list, chunk)
+        t1 = time.time()
+   
+    ''' map_async is failing because of a None. When calling box_i.get()
+    it fails
+    '''
+    print(1111111111111111111111111111111111111)
+    box_i.wait()
+    print(box_i)
+    # =================
+
     # Go pixel by pixel doing the median
 
-def fits_section(fname, x0, y0, x1, y1, ext=0, bin=256):
+def fits_section(fname, coo=None, ext=0, delta=256):
     ''' Load fits file section bin size of sq pixels
     '''
-    if (int(abs(x1 - x0)) == bin) and (int(abs(y1 - y0)) == bin):
+    print time.ctime()
+    x0, y0, x1, y1 = coo
+    if (int(abs(x1 - x0)) == delta) and (int(abs(y1 - y0)) == delta):        
         pass
     else:
         logging.warning('Coodinates don\'t have the size of the input bin')
@@ -301,7 +342,7 @@ def fits_section(fname, x0, y0, x1, y1, ext=0, bin=256):
         return sq
     else:
         logging.error('File {0} does not exists'.format(fname))
-        return None
+        return -1
 
 if __name__ == '__main__':
     txt_gral = 'Code to create a median image from an input list of expnum'
