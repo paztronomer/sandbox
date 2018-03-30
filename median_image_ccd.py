@@ -225,7 +225,7 @@ class Call:
 #
 #
 
-def db_red_pixcor(arr_expnum, reqnum, band,
+def db_red_pixcor(reqnum, band,
                   root_path='/archive_data/desarchive/'):
     ''' Simple function to get path information from DB, for a set under same
     reqnum and band
@@ -257,24 +257,11 @@ def db_red_pixcor(arr_expnum, reqnum, band,
     full_path = np.array(full_path)
     return full_path
 
-def main_aux(explist=None, pathlist=None, reqnum=None, band=None):
-    if ((explist is not None) and (pathlist is None)):
-        # Load the table
-        exp = np.genfromtxt(
-            explist,
-            dtype={'names' : ['expnum'], 'formats' : ['i8']},
-            comments='#',
-            missing_values=np.nan,
-            usecols=0
-        )
-        # Get the full path from the DB, get in chunks of 1000 (max before
-        # use temp tables)
-        if (exp.size > 999):
-            accum = []
-            logging.warning('Still not implemented!')
-            exit(1)
-        fpath = db_red_pixcor(exp['expnum'], reqnum, band)
-    elif ((pathlist is not None) and (explist is None)):
+def main_aux(pathlist=None, reqnum=None, band=None):
+    if (pathlist is None):
+        # Load from DB, based in reqnum and band
+        fpath = db_red_pixcor(reqnum, band)
+    elif (pathlist is not None):
         # Load the table, with no constraint on filetype, in case path
         # is extremely large
         exp = np.genfromtxt(
@@ -321,14 +308,9 @@ if __name__ == '__main__':
     txt_gral += ' or full paths. No normalization is applied so make sure'
     txt_gral += ' all images are on the same ground level'
     par = argparse.ArgumentParser(description=txt_gral)
-    src = par.add_mutually_exclusive_group()
     #
-    exp_tmp = '/Users/fco/Code/des_calibrations/skytemplates_build'
-    exp_tmp += '/Y5_skytemplates/expnum_g_not20171109t1125.csv'
-    h0 = ''
-    src.add_argument('--explist', help=h0, default=exp_tmp)
     h1 = ''
-    src.add_argument('--pathlist', help=h1)
+    par.add_argument('--pathlist', help=h1)
     h2 = 'Reqnum in case --explist was feeded'
     par.add_argument('--req', help=h2, type=int)
     h3 = 'Band in case --explist was feeded'
@@ -336,7 +318,6 @@ if __name__ == '__main__':
     # Parse args
     par = par.parse_args()
     in_kw = {
-        'explist' : par.explist,
         'pathlist' : par.pathlist,
         'reqnum' : par.req,
         'band' : par.band,
