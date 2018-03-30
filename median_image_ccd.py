@@ -3,7 +3,6 @@
 
 import os
 import time
-import subprocess
 import numpy as np
 import fitsio
 import pickle
@@ -226,31 +225,40 @@ class Call:
 #
 #
 
-def db_path(arr_expnum, root_path='/archive_data/desarchive/'):
-    ''' Simple function to get path information from DB
+def db_red_pixcor(arr_expnum, reqnum, band,
+                  root_path='/archive_data/desarchive/'):
+    ''' Simple function to get path information from DB, for a set under same
+    reqnum and band
     '''
     connect = ea.connect('desoper')
     cursor = connect.cursor()
-    q = 'select fai.path, fai.filename, fai.compression'
-    q += ' from file_archive_info fai, exposure e'
-    q += ' where e.expnum in ({0})'.format(','.join(map(str, arr_expnum)))
-    q += ' and e.filename=fai.filename'
-    q += ' order by fai.path'
+    q = 'select fai.path, fai.filename, fai.compression, e.band'
+    q += ' from file_archive_info fai, desfile d, pfw_attempt att, exposure e'
+    q += ' where fai.desfile_id=d.id'
+    q += ' and d.filetype=\'red_pixcor\''
+    q += ' and d.pfw_attempt_id=att.id'
+    q += ' and att.reqnum={0}'.format(reqnum)
+    q += ' and att.unitname=CONCAT(\'D00\', e.expnum)'
+    q += ' and e.band=\'{0}\''.format(band)
     outtab = connect.query_to_pandas(q)
     # Transform column names to lower case
     outtab.columns = map(str.lower, outtab.columns)
     # Double check, remove duplicates
-    outtab.drop_duplicates([''], inplace=True)
+    outtab.drop_duplicates(['filename'], inplace=True)
     outtab.reset_index(drop=True, inplace=True)
     # Construct the full path
-    f1 = lambda a, b, c: os.path.join(root_path, a, b + c)
+    def f1(a, b, c):
+        if (c == None): return os.path.join(root_path, a, b)
+        else: return os.path.join(root_path, a, b + c)
+    # Construct the full path
     full_path = map(f1, outtab['path'], outtab['filename'],
                     outtab['compression'])
-    full_path = tuple(full_path)
+    full_path = list(full_path)
+    full_path = np.array(full_path)
     return full_path
 
-def main_aux(explist=None, pathlist=None):
-    if (explist is not None):
+def main_aux(explist=None, pathlist=None, reqnum=None, band=None):
+    if ((explist is not None) and (pathlist is None)):
         # Load the table
         exp = np.genfromtxt(
             explist,
@@ -265,8 +273,8 @@ def main_aux(explist=None, pathlist=None):
             accum = []
             logging.warning('Still not implemented!')
             exit(1)
-        fpath = db_path(exp['expnum'])
-    elif (pathlist is not None):
+        fpath = db_red_pixcor(exp['expnum'], reqnum, band)
+    elif ((pathlist is not None) and (explist is None)):
         # Load the table, with no constraint on filetype, in case path
         # is extremely large
         exp = np.genfromtxt(
@@ -276,7 +284,7 @@ def main_aux(explist=None, pathlist=None):
             missing_values=np.nan,
             usecols=0
         )
-        fpath = tuple(exp['path'])
+        fpath = exp['path']
     # Remove duplicates
     uarr, uidx, uinverse, ucounts= np.unique(
         fpath,
@@ -284,7 +292,29 @@ def main_aux(explist=None, pathlist=None):
         return_inverse=True,
         return_counts=True,
     )
-    # USe /work/devel/fpazch/calib_space/Y4E1_skytemplates_testxtalk/g_c03
+    # With the full paths open the files in parallel, read in boxes of
+    # 256 sq pix, stacking them
+    h = fpath[0]
+    x0, y0, x1, y1 = 0, 0, 256, 256
+    s = fits_section(h, x0, y0, x1, y1)
+    print(s)
+    # Go pixel by pixel doing the median
+
+def fits_section(fname, x0, y0, x1, y1, ext=0, bin=256):
+    ''' Load fits file section bin size of sq pixels
+    '''
+    if (int(abs(x1 - x0)) == bin) and (int(abs(y1 - y0)) == bin):
+        pass
+    else:
+        logging.warning('Coodinates don\'t have the size of the input bin')
+    if os.path.exists(fname):
+        fits = fitsio.FITS(fname)
+        sq = np.copy(fits[ext][y0:y1 , x0:x1])
+        fits.close()
+        return sq
+    else:
+        logging.error('File {0} does not exists'.format(fname))
+        return None
 
 if __name__ == '__main__':
     txt_gral = 'Code to create a median image from an input list of expnum'
@@ -295,8 +325,20 @@ if __name__ == '__main__':
     #
     exp_tmp = '/Users/fco/Code/des_calibrations/skytemplates_build'
     exp_tmp += '/Y5_skytemplates/expnum_g_not20171109t1125.csv'
-    src.add_argument('--explist', default=exp_tmp)
-    src.add_argument('--pathlist')
+    h0 = ''
+    src.add_argument('--explist', help=h0, default=exp_tmp)
+    h1 = ''
+    src.add_argument('--pathlist', help=h1)
+    h2 = 'Reqnum in case --explist was feeded'
+    par.add_argument('--req', help=h2, type=int)
+    h3 = 'Band in case --explist was feeded'
+    par.add_argument('--band', help=h3, type=str)
+    # Parse args
     par = par.parse_args()
-
-    main_aux(explist=par.explist)
+    in_kw = {
+        'explist' : par.explist,
+        'pathlist' : par.pathlist,
+        'reqnum' : par.req,
+        'band' : par.band,
+    }
+    main_aux(**in_kw)
