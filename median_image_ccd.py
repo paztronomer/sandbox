@@ -316,6 +316,8 @@ def main_aux(pathlist=None, reqnum=None, band=None):
 
     try:
         print('CHECK FOR LIST_AUX IN FITS')
+        '''Wrong call of fits_section, Do it not with dict'''
+        exit()
         partial_aux = partial(fits_section, **kw_section)
         t0 = time.time()
         # map_async does not block the processes, and executes non-ordered
@@ -330,14 +332,6 @@ def main_aux(pathlist=None, reqnum=None, band=None):
         t0 = time.time()
         boxi = P1.map_async(fits_section, aux_list, chunk)
         t1 = time.time()
-    #
-    # problem:i coo is None 
-    #
-     
-
-    ''' map_async is failing because of a None. When calling box_i.get()
-    it fails
-    '''
     boxi.wait()
     aux_boxi = boxi.get()
     print(aux_boxi[-1])
@@ -351,18 +345,15 @@ def fits_section(aux_list):
     delta = 256
     '''
     fname, coo, ext, delta = aux_list
-    print coo
     x0, y0, x1, y1 = coo
     if (int(abs(x1 - x0)) == delta) and (int(abs(y1 - y0)) == delta):        
         pass
     else:
         logging.warning('Coodinates don\'t have the size of the input bin')
-    print('check 01')
     if os.path.exists(fname):
         fits = fitsio.FITS(fname)
         sq = np.copy(fits[ext][y0:y1 , x0:x1])
         fits.close()
-        print(type(sq))
         return sq
     else:
         logging.error('File {0} does not exists'.format(fname))
