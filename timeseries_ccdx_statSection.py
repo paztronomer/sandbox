@@ -175,7 +175,6 @@ def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0,
             os.remove(tmp_csv)
         # Delete the variable harboring the results 
         del tmpS
-        print tab[np.where(tab['band'] == b)]
     # For partial usage:
     # partial_aux = partial(stat_section, *list_of_nonvarying_variables)
     # P1.map_async(stat_section, fits_filename)
