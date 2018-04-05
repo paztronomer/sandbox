@@ -2,6 +2,8 @@
 '''
 
 import os
+import sys
+import uuid
 import time
 import numpy as np
 import pandas as pd
@@ -14,7 +16,6 @@ try:
 except:
     pass
 import multiprocessing as mp
-import easyaccess as ea
 
 # Setup logging
 logging.basicConfig(
@@ -87,7 +88,8 @@ ccdnums = {
     'N31':  62
 }
 
-def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0):
+def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0, 
+             label=None):
     if (pathlist is not None):
         # Load the table, with no constraint on filetype, in case path
         # is extremely large
@@ -120,72 +122,100 @@ def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0):
     # If raw, extension is going to be the ccd name
     if raw:
         extens = ccdname
+    # Setup of parallel
+    nproc = mp.cpu_count()
+    logging.info('Launch {0} parallel processes'.format(nproc))
+    P1 = mp.Pool(processes=nproc)
+    chunk = 1
+    # Datatype to save the results
+    dtStat = [('mean', 'f8'), ('median', 'f8'), ('std', 'f8'), 
+              ('min', 'i8'), ('max', 'i8'),
+              ('mad', 'f8'), ('rms', 'f8'),
+              ('nite', 'i8'), ('expnum', 'i8'), 
+              ('exptime', 'i8'), ('band', '|S10'),]
     # Construct the lists to open each image
     for b in np.unique(tab['band'][np.where(tab['band'] != -9999)]):
         s = tab[np.where(tab['band'] == b)]
         N = s.size
         z = zip(s['path'], [coo] * N, [extens] * N, [raw] * N, 
-                s['nite'], s['expnum'], s['exptime'])
-        #
-        # Call the function that calculates the stats, adds exposure info (and
-        # obviously, reads the section beforehand)
-     
-    # [fpazch@deslogin sandbox]$ python timeseries_ccdx_statSection.py object_exposures_fullpath_Y5.csv --ccd 46 --coo 725 2565 865 4096 --raw
-    exp=None
-    exit()
-    #
-    # NOTE
-    # The goal is to read the same section, from a bunch of images, in  
-    # parallel. Then stack the set of section and calculate the median 
-    # of each pixel.
-    #
-    # coo list contains [x0, y0, x1, y1]
-    coo = [0, 0, 256, 256]
-    # coo: coordinates, ext: extension to read from the FITS file, 
-    # delta: side size (pixel) of the square used to sample the FITS file 
-    kw_section = {
-        'coo' : coo,
-        'ext' : 0,
-        'delta' : 256,
-    }
-    
-    nproc = mp.cpu_count()
-    logging.info('Launch {0} parallel processes'.format(nproc))
-    P1 = mp.Pool(processes=nproc)
-    
-    # chunk = int(4096 / kw_section['delta'] * 2048 / kw_section['delta'])
-    # The value for chunk will help prevent memory errors. "Chops the iterable 
-    # into a number of chunks which it submits to the process pool as separate 
-    # tasks"
-    chunk = 4
+                s['nite'], s['expnum'], s['exptime'], [b] * N)
+        # Call by band
+        logging.info('Working on {0}-band'.format(b))
+        tmpS = P1.map_async(stat_section, z, chunk)
+        tmpS.wait()
+        res = tmpS.get()
+        # Save results as structured arrays
+        r_struc = np.array(res, dtype=dtStat)
+        tmp_npy = '{0}_{1}.npy'.format(label, b)
+        tmp_csv = '{0}_{1}.csv'.format(label, b)
+        if os.path.exists(tmp_npy):
+            logging.warning('File {0} already exists'.format(tmp_npy))
+            tmp_npy = '{0}_{1}.npy'.format(str(uuid.uuid4()), band)
+            logging.warning('New output name {0}'.format(tmp_npy))
+        if os.path.exists(tmp_csv):
+            logging.warning('File {0} already exists'.format(tmp_csv))
+            tmp_csv = '{0}_{1}.csv'.format(str(uuid.uuid4()), band)
+            logging.warning('New output name {0}'.format(tmp_csv))
+        try:
+            np.save(tmp_npy, r_struc)
+            logging.info('{0} saved'.format(tmp_npy))
+        except:
+            logging.info('File {0} could not be saved'.format(tmp_npy))
+            os.remove(tmp_npy)
+        try:
+            np.savetxt(
+                tmp_csv, r_struc, delimiter=',', 
+                header=','.join(r_struc.dtype.names),
+                fmt='%.4f,%.4f,%.4f,%i,%i,%.4f,%.4f,%i,%i,%i,%s'
+            )
+            logging.info('{0} saved'.format(tmp_csv))
+        except:
+            logging.info('File {0} could not be saved'.format(tmp_csv))
+            os.remove(tmp_csv)
+    # For partial usage:
+    # partial_aux = partial(stat_section, *list_of_nonvarying_variables)
+    # P1.map_async(stat_section, fits_filename)
+    return True
 
-    try:
-        print('CHECK FOR LIST_AUX IN FITS')
-        partial_aux = partial(fits_section, **kw_section)
-        t0 = time.time()
-        # map_async does not block the processes, and executes non-ordered
-        box_i = P1.map_async(partial_aux, fpath, chunk)
-        t1 = time.time()
-    except:
-        logging.warning('No available module: partial')
-        aux_list = [(fnm, 
-                     kw_section['coo'], 
-                     kw_section['ext'], 
-                     kw_section['delta']) for fnm in fpath]
-        t0 = time.time()
-        boxi = P1.map_async(fits_section, aux_list, chunk)
-        t1 = time.time()
-    boxi.wait()
-    aux_boxi = boxi.get()
-    print(aux_boxi[-1])
-    # =================
-
-    # Go pixel by pixel doing the median
-
-def fits_section(x_list):
-    ''' Function to read section
+def stat_section(y_list):
+    ''' Function to open the FITS file, perform some statistics and return
+    them together with exposure information
+    Inputs 
+    - y_list contains the following
+    - p: path to the FITS file, to be passed to fits_section()
+    - coo: coordinates to be passed to fits_section()
+    - ext: extension, to be passed to fits_section() 
+    - raw: flag, to be passed to fits_section()
+    - nite: observation day for the exposure
+    - expnum: exposure number for the image
+    - exptime: exposure time ein seconds
+    - band: filter used for the exposure
+    Returns
+    - a tuple to be used in constructing a structured array
     '''
-    fname, coo, ext, raw = x_list
+    path, coo, ext, raw, nite, expnum, exptime, band = y_list 
+    m = fits_section(path, coo, ext, raw) 
+    # Function to get mean, median, stdev, min, max, MAD, RMS
+    f1 = lambda x: [ np.mean(x), np.median(x), np.std(x), np.min(x), 
+                     np.max(x), np.median(np.abs( x - np.median(x) )), 
+                     np.sqrt(np.mean(np.square( x.ravel() ))) ]
+    aux = f1(m) + [nite, expnum, exptime, band]
+    return tuple(aux)
+
+def fits_section(fname, coo, ext, raw):
+    ''' Function to read section of the CCD, based in input coordinates. For
+    raw images, use DATASEC to determine the offset to use
+    Inputs
+    - fname: filename of the FITS file
+    - coo: list or tuple. Coordinates for the left-lower and right-upper 
+    of the box
+    - ext: FITS file extension to read
+    - raw: boolean indicating if FITS is raw, having overscan still in the 
+    image
+    Returns
+    - ccd section array
+    '''
+    # fname, coo, ext, raw = x_list
     x0, y0, x1, y1 = coo
     if os.path.exists(fname):
         fits = fitsio.FITS(fname)
@@ -195,7 +225,7 @@ def fits_section(x_list):
     else:
         logging.error('File {0} does not exists'.format(fname))
         return False
-    # For raw exposures, fetermine the offset
+    # For raw exposures, determine the offset
     if raw:
         # Read the header info
         hdr = fitsio.read_header(fname, ext)
@@ -214,7 +244,7 @@ def fits_section(x_list):
             sec = np.copy(fits[ext][y0 + dsec[2] : y1 + 1,
                                     x0 + dsec[1] : x1 + 1])
         elif (dsec[2] < dsec[3]) and (dsec[0] < dsec[1]):
-            logging.info('{0} increasing reading direction'.format(fname))
+            # logging.info('{0} increasing reading direction'.format(fname))
             sec = np.copy(fits[ext][y0 + dsec[2] : y1 + 1,
                                     x0 + dsec[0] : x1 + 1])
         fits.close()
@@ -241,10 +271,12 @@ if __name__ == '__main__':
     ecl.add_argument('--coo', help=h2, type=int, nargs=4)
     h3 = 'Flag. Use if inputs are raw image with overscan'
     ecl.add_argument('--raw', help=h2, action='store_true')
+    h4 = 'Label to be used for output files. Default id PID'
+    def_label = 'PID{0}'.format(os.getpid())
+    ecl.add_argument('--label', help=h4, metavar='', default=def_label)
     # Parser
     ecl = ecl.parse_args()
-
-    main_aux(pathlist=ecl.path, ccd=ecl.ccd, coo=ecl.coo, raw=ecl.raw)
-
-    print(ecl)
+    #
+    main_aux(pathlist=ecl.path, ccd=ecl.ccd, coo=ecl.coo, raw=ecl.raw, 
+             label=ecl.label)
 
