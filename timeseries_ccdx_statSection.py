@@ -134,7 +134,8 @@ def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0,
               ('nite', 'i8'), ('expnum', 'i8'), 
               ('exptime', 'i8'), ('band', '|S10'),]
     # Construct the lists to open each image
-    for b in np.unique(tab['band'][np.where(tab['band'] != -9999)]):
+    uband = np.unique(tab['band'])
+    for b in uband:
         s = tab[np.where(tab['band'] == b)]
         N = s.size
         z = zip(s['path'], [coo] * N, [extens] * N, [raw] * N, 
@@ -150,11 +151,11 @@ def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0,
         tmp_csv = '{0}_{1}.csv'.format(label, b)
         if os.path.exists(tmp_npy):
             logging.warning('File {0} already exists'.format(tmp_npy))
-            tmp_npy = '{0}_{1}.npy'.format(str(uuid.uuid4()), band)
+            tmp_npy = '{0}_{1}.npy'.format(str(uuid.uuid4()), b)
             logging.warning('New output name {0}'.format(tmp_npy))
         if os.path.exists(tmp_csv):
             logging.warning('File {0} already exists'.format(tmp_csv))
-            tmp_csv = '{0}_{1}.csv'.format(str(uuid.uuid4()), band)
+            tmp_csv = '{0}_{1}.csv'.format(str(uuid.uuid4()), b)
             logging.warning('New output name {0}'.format(tmp_csv))
         try:
             np.save(tmp_npy, r_struc)
@@ -172,6 +173,9 @@ def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0,
         except:
             logging.info('File {0} could not be saved'.format(tmp_csv))
             os.remove(tmp_csv)
+        # Delete the variable harboring the results 
+        del tmpS
+        print tab[np.where(tab['band'] == b)]
     # For partial usage:
     # partial_aux = partial(stat_section, *list_of_nonvarying_variables)
     # P1.map_async(stat_section, fits_filename)
@@ -194,7 +198,9 @@ def stat_section(y_list):
     - a tuple to be used in constructing a structured array
     '''
     path, coo, ext, raw, nite, expnum, exptime, band = y_list 
-    m = fits_section(path, coo, ext, raw) 
+    m = fits_section(path, coo, ext, raw)
+    # Normalizing by exposure time
+    m = m / exptime
     # Function to get mean, median, stdev, min, max, MAD, RMS
     f1 = lambda x: [ np.mean(x), np.median(x), np.std(x), np.min(x), 
                      np.max(x), np.median(np.abs( x - np.median(x) )), 
@@ -257,12 +263,13 @@ def fits_section(fname, coo, ext, raw):
 if __name__ == '__main__':
     
     hgral = 'Time Series constructor. Calculates basic statistics for a'
-    hgral += ' section of the CCD, for either raw or processed images'
+    hgral += ' section of the CCD, for either raw or processed images.'
+    hgral += ' Normalized by exposure time.'
     ecl = argparse.ArgumentParser(description=hgral)
     h0 = 'Table of night, expnum, band, exptime, and path to images'
     h0 += ' for which stats should be calculated. Please use column names:'
     h0 += ' nite, expnum, band, exptime, path.'
-    h0 += 'Format is space-separated or csv table'
+    h0 += 'Format is CSV'
     ecl.add_argument('path', help=h0)
     h1 = 'CCD number on which operate'
     ecl.add_argument('--ccd', help=h1, type=int)
