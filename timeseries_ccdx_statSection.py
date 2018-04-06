@@ -89,7 +89,7 @@ ccdnums = {
 }
 
 def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0, 
-             label=None):
+             label=None, stamp=False, suffix=None):
     if (pathlist is not None):
         # Load the table, with no constraint on filetype, in case path
         # is extremely large
@@ -139,7 +139,8 @@ def main_aux(pathlist=None, ccd=None, coo=None, raw=None, extens=0,
         s = tab[np.where(tab['band'] == b)]
         N = s.size
         z = zip(s['path'], [coo] * N, [extens] * N, [raw] * N, 
-                s['nite'], s['expnum'], s['exptime'], [b] * N)
+                s['nite'], s['expnum'], s['exptime'], [b] * N,
+                [stamp] * N, [suffix] * N)
         # Call by band
         logging.info('Working on {0}-band'.format(b))
         tmpS = P1.map_async(stat_section, z, chunk)
@@ -193,13 +194,31 @@ def stat_section(y_list):
     - expnum: exposure number for the image
     - exptime: exposure time ein seconds
     - band: filter used for the exposure
+    - stamp: boolean indicatinf wether to save or not a NPY file of the 
+    section, inside the stamps/ folder
     Returns
     - a tuple to be used in constructing a structured array
     '''
-    path, coo, ext, raw, nite, expnum, exptime, band = y_list 
+    path, coo, ext, raw, nite, expnum, exptime, band, stamp, suf = y_list 
     m = fits_section(path, coo, ext, raw)
     # Normalizing by exposure time
     m = m / exptime
+    if stamp:
+        out_dir = 'stamps/'
+        out_npy = '{0}_{1}_D{2:08}.npy'.format(suf, band, expnum)
+        out_npy = os.path.join(out_dir, out_npy)
+        if (not os.path.exists(dir_out)):
+            logging.error('Directory {0} does not exists'.format(out_dir))
+        if os.path.exists(out_npy):
+            logging.warning('File {0} exists'.format(tmp_npy))
+            out_npy = out_npy.replace(suf, str(uuid.uuid4()))
+            logging.warning('New output name {0}'.format(tmp_npy))
+        try:
+            np.save(out_npy, m, allow_pickle=True, fix_imports=True)
+            logging.info('Saving {0} normalized by EXPTIME'.format(out_npy))
+        except:
+            logging.info('File {0} could not be saved'.format(out_npy))
+            os.remove(out_npy)
     # Function to get mean, median, stdev, min, max, MAD, RMS
     f1 = lambda x: [ np.mean(x), np.median(x), np.std(x), np.min(x), 
                      np.max(x), np.median(np.abs( x - np.median(x) )), 
@@ -280,9 +299,13 @@ if __name__ == '__main__':
     h4 = 'Label to be used for output files. Default id PID'
     def_label = 'PID{0}'.format(os.getpid())
     ecl.add_argument('--label', help=h4, metavar='', default=def_label)
+    h5 = 'Flag. Save the stamps on a NPY format? Needs directory: \'stamps/\''
+    ecl.add_argument('--stamp', help=h5, action='store_true')
+    h6 = 'Suffix to be used on the stamps, if saved'
+    ecl.add_argument('--suffix', help=h6, metavar='')
     # Parser
     ecl = ecl.parse_args()
     #
     main_aux(pathlist=ecl.path, ccd=ecl.ccd, coo=ecl.coo, raw=ecl.raw, 
-             label=ecl.label)
+             label=ecl.label, stamp=ecl.stamp, suffix=ecl.suffix)
 
