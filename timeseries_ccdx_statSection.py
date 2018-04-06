@@ -207,12 +207,12 @@ def stat_section(y_list):
         out_dir = 'stamps/'
         out_npy = '{0}_{1}_D{2:08}.npy'.format(suf, band, expnum)
         out_npy = os.path.join(out_dir, out_npy)
-        if (not os.path.exists(dir_out)):
+        if (not os.path.exists(out_dir)):
             logging.error('Directory {0} does not exists'.format(out_dir))
         if os.path.exists(out_npy):
-            logging.warning('File {0} exists'.format(tmp_npy))
+            logging.warning('File {0} exists'.format(out_npy))
             out_npy = out_npy.replace(suf, str(uuid.uuid4()))
-            logging.warning('New output name {0}'.format(tmp_npy))
+            logging.warning('New output name {0}'.format(out_npy))
         try:
             np.save(out_npy, m, allow_pickle=True, fix_imports=True)
             logging.info('Saving {0} normalized by EXPTIME'.format(out_npy))
