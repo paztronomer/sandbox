@@ -267,8 +267,6 @@ def db_red_pixcor(reqnum, band,
 
 def fits_section(aux_list):
     ''' Load fits file section bin size of sq pixels
-    ext = 0
-    delta = 256
     '''
     fname, coo, ext, delta = aux_list
     x0, y0, x1, y1 = coo
@@ -340,11 +338,18 @@ def main_aux(pathlist=None,
     # of each pixel.
     #
     # Get shape of the CCD
-    aux_fits = fitsio.read(fpath[0])
-    f_dim = aux_fits.shape
+    try:
+        aux_fits = fitsio.read(fpath[0])
+        f_dim = aux_fits.shape
+        logging.info('CCD shape: {0}'.format(f_dim))
+    except:
+        logging.error('File cannot be read. Using 2048x4096 as CCD dimensions')
+        f_dim = (4096, 2048)
     # Define squared sections to be used for calculation
     if (px_side is None):
         px_side = 512
+    if ((f_dim[0] % px_side != 0) or (f_dim[1] % px_side != 0)):
+        logging.warning('{0}x{0} des not fit exactly on CCD'.format(px_side))
     # idx_d0 = np.arange(0, fits_dim[0] + 1, px_side)
     # idx_d1 = np.arange(0, fits_dim[1] + 1, px_side)
     yx = np.mgrid[0 : f_dim[0]+1 : px_side, 0 : f_dim[1]+1 : px_side]
