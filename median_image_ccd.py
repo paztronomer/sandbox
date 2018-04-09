@@ -4,6 +4,7 @@ class-structure for an easy call in parallel
 
 import os
 import time
+import uuid
 import numpy as np
 import pandas as pd
 import fitsio
@@ -13,7 +14,7 @@ import argparse
 try:
     import partial
 except:
-    pass
+    logging.warning('No available module: partial')
 import multiprocessing as mp
 import easyaccess as ea
 
@@ -285,11 +286,26 @@ def fits_section(aux_list):
         print('returning -1')
         return -1
 
+def stat_cube(x3d, func):
+    ''' Function to calculate the median image per pixel, using an input 
+    3dimensional array containing the stamps on which to work.
+    Uses numpy iteration tools
+    '''
+    out = np.zeros_like(x3d[:, :, 0])
+    it = np.nditer(x3d[:, :, 0], flags=['multi_index'])
+    while not it.finished:
+        i1, i2 = it.multi_index
+        out[i1, i2] = func(x3d[i1, i2, :])
+        it.iternext()
+    return out
+
 def main_aux(pathlist=None, 
              reqnum=None, 
              band=None, 
              nproc=None, 
-             chunk=None,):
+             chunk=None,
+             px_side=None,
+             label=None,):
     ''' Main auxiliaty function to call the code in parallel
     '''
     if (pathlist is None):
@@ -323,20 +339,24 @@ def main_aux(pathlist=None,
     # parallel. Then stack the set of section and calculate the median 
     # of each pixel.
     #
-
-    
-    # coo list contains [x0, y0, x1, y1]
-    # here create an iterator in X and Y 
-    coo = [0, 0, 256, 256]
-    
-    
-    # coo: coordinates, ext: extension to read from the FITS file, 
-    # delta: side size (pixel) of the square used to sample the FITS file 
-    kw_section = {
-        'coo' : coo,
-        'ext' : 0,
-        'delta' : 256,
-    }
+    # Get shape of the CCD
+    aux_fits = fitsio.read(fpath[0])
+    f_dim = aux_fits.shape
+    # Define squared sections to be used for calculation
+    if (px_side is None):
+        px_side = 512
+    # idx_d0 = np.arange(0, fits_dim[0] + 1, px_side)
+    # idx_d1 = np.arange(0, fits_dim[1] + 1, px_side)
+    yx = np.mgrid[0 : f_dim[0]+1 : px_side, 0 : f_dim[1]+1 : px_side]
+    # coo_list contains [x0, y0, x1, y1]
+    coo_list = []
+    for iy in range(f_dim[0] / px_side):#yx.shape[1]):
+        for ix in range(f_dim[1] / px_side):#(yx.shape[2]):
+            y0, x0 = (yx[0, iy, ix], yx[1, iy, ix])
+            y1, x1 = (yx[0, iy+1, ix], yx[1, iy, ix+1])
+            coo_list.append((x0, y0, x1, y1))
+    # Create an array to harbor the results
+    tmp_res = np.zeros((f_dim[0], f_dim[1]))
     # Setup the parallel call
     # The value for chunk will help prevent memory errors. "Chops the iterable 
     # into a number of chunks which it submits to the process pool as separate 
@@ -347,52 +367,62 @@ def main_aux(pathlist=None,
         chunk = int( np.ceil(fpath.size / nproc) )
     logging.info('Launch {0} parallel processes'.format(nproc))
     P1 = mp.Pool(processes=nproc)
-    # Call using partial() or constructed list
-    try:
-        partial_aux = partial(
-            fits_section, 
-            [kw_section['coo'], kw_section['ext'], kw_section['delta']]
-        )
-        t0 = time.time()
-        # map_async does not block the processes, and executes non-ordered
-        boxi = P1.map_async(partial_aux, fpath, chunk)
-        boxi.wait()  
-        t1 = time.time()
-    except:
-        logging.warning('No available module: partial')
-        aux_list = [(fnm, 
-                     kw_section['coo'], 
-                     kw_section['ext'], 
-                     kw_section['delta']) for fnm in fpath]
-        t0 = time.time()
-        boxi = P1.map_async(fits_section, aux_list, chunk)
-        boxi.wait()
-        t1 = time.time()
-    boxi = boxi.get()
-    # At this point the Pool has returned a list, containig the stamps
-    # for all the CCDs
-    # Call the median image generator, using np.nditer(), with a 3D array
-    x3d = np.dstack(boxi)
-    z_median = stat_cube(x3d, (lambda: np.median)())
+    # Here I can also parallelize in terms of coordinates, but need to be 
+    # careful to not mix results from different sections of the CCD, and 
+    # manage the Pool (2 in fact)
+    for idx_c, coo in enumerate(coo_list):
+        logging.info('Box {0} of {1}'.format(idx_c + 1, len(coo_list)))
+        # coo: coordinates, ext: extension to read from the FITS file, 
+        # delta: side size (pixel) of the square used to sample the FITS file 
+        kw_section = {
+            'coo' : coo,
+            'ext' : 0,
+            'delta' : px_side,
+        }
+        # Call using partial() or constructed list
+        try:
+            partial_aux = partial(
+                fits_section, 
+                [kw_section['coo'], kw_section['ext'], kw_section['delta']]
+            )
+            t0 = time.time()
+            # map_async does not block the processes, and executes non-ordered
+            boxi = P1.map_async(partial_aux, fpath, chunk)
+            boxi.wait()  
+            t1 = time.time()
+        except:
+            aux_list = [(fnm, 
+                         kw_section['coo'], 
+                         kw_section['ext'], 
+                         kw_section['delta']) for fnm in fpath]
+            t0 = time.time()
+            boxi = P1.map_async(fits_section, aux_list, chunk)
+            boxi.wait()
+            t1 = time.time()
+        boxi = boxi.get()
+        # At this point the Pool has returned a list, containig the stamps
+        # for all the CCDs
+        # Call the median image generator, using np.nditer(), with a 3D array
+        x3d = np.dstack(boxi)
+        z_median = stat_cube(x3d, (lambda: np.median)())
+        # Put into the auxiliary array 
+        x0, y0, x1, y1 = coo
+        tmp_res[y0:y1, x0:x1] = z_median
+    # The results looks good!
+    # Save in FITS format
+    if (label is None):
+        label = str(uuid.uuid4())
+    ores = 'medImg_{0}.fits'.format(label)
+    while os.path.exists(ores):
+        logging.info('File {0} exists. Changing output name'.format(ores))
+        ores = 'medImg_{0}.fits'.format(str(uuid.uuid4())) 
+    fits = fitsio.FITS(ores,'rw')
+    fits.write(tmp_res)
+    fits[-1].write_checksum()
+    fits.close()
+    logging.info('Median image {0} saved'.format(ores))
+    return True
 
-    # fits = fitsio.FITS(os.path.join(direc,fnm),'rw')
-    # fits.write(M_w)
-    # fits[-1].write_checksum()
-    # fits.close()
-    # Go pixel by pixel doing the median
-
-def stat_cube(x3d, func):
-    ''' Function to calculate the median image per pixel, using an input 
-    3dimensional array containing the stamps on which to work.
-    Uses numpy iteration tools
-    '''
-    out = np.zeros_like(x3d[:, :, 0])
-    it = np.nditer(x3d[:, :, 0], flags=['multi_index'])
-    while not it.finished:
-        i1, i2 = it.multi_index
-        out[i1, i2] = func(x3d[i1, i2, :])
-        it.iternext()
-    return out
 
 if __name__ == '__main__':
     txt_gral = 'Code to create a median image from an input list of expnum'
@@ -413,6 +443,11 @@ if __name__ == '__main__':
     par.add_argument('-n', help=h4, metavar='', type=int)
     h5 = 'Chunks on which to divide the inputs in the processes. Default: 1'
     par.add_argument('-c', help=h5, metavar='', type=int)
+    h6 = 'Label to use for output median image. Default is a random string'
+    par.add_argument('--label', help=h6, metavar='')
+    h7 = 'Side of the square (in pix) to be used as sections for dividing'
+    h7 += ' the CCD. Need to fit exactly into the CCD array. Default: 512'
+    par.add_argument('--square', help=h7, metavar='', type=int)
     # Parse args
     par = par.parse_args()
     in_kw = {
@@ -421,5 +456,7 @@ if __name__ == '__main__':
         'band' : par.band,
         'nproc' : par.n,
         'chunk' : par.c,
+        'label' : par.label,
+        'px_side' : par.square,
     }
     main_aux(**in_kw)
