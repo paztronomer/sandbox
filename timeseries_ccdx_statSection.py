@@ -214,7 +214,7 @@ def stat_section(y_list):
             out_npy = out_npy.replace(suf, str(uuid.uuid4()))
             logging.warning('New output name {0}'.format(out_npy))
         try:
-            np.save(out_npy, m, allow_pickle=True, fix_imports=True)
+            np.save(out_npy, m)
             logging.info('Saving {0} normalized by EXPTIME'.format(out_npy))
         except:
             logging.info('File {0} could not be saved'.format(out_npy))
@@ -224,7 +224,7 @@ def stat_section(y_list):
                      np.max(x), np.median(np.abs( x - np.median(x) )), 
                      np.sqrt(np.mean(np.square( x.ravel() ))) ]
     aux = f1(m) + [nite, expnum, exptime, band]
-    return tuple(aux)
+    return [tuple(aux), m]
 
 def fits_section(fname, coo, ext, raw):
     ''' Function to read section of the CCD, based in input coordinates. For
