@@ -1,4 +1,5 @@
-'''Script to create a average-like image from a set, using the median
+'''Script to create a average-like image from a set, using the median. No 
+class-structure for an easy call in parallel
 '''
 
 import os
@@ -227,6 +228,7 @@ class Call:
         #normalize the images by its median
         Specific.norm_image(dbtab)
 #
+# ============================================================================
 #
 #
 
@@ -262,13 +264,40 @@ def db_red_pixcor(reqnum, band,
     full_path = np.array(full_path)
     return full_path
 
-def main_aux(pathlist=None, reqnum=None, band=None):
+def fits_section(aux_list):
+    ''' Load fits file section bin size of sq pixels
+    ext = 0
+    delta = 256
+    '''
+    fname, coo, ext, delta = aux_list
+    x0, y0, x1, y1 = coo
+    if (int(abs(x1 - x0)) == delta) and (int(abs(y1 - y0)) == delta):        
+        pass
+    else:
+        logging.warning('Coordinates don\'t have the size of the input bin')
+    if os.path.exists(fname):
+        fits = fitsio.FITS(fname)
+        sq = np.copy(fits[ext][y0:y1 , x0:x1])
+        fits.close()
+        return sq
+    else:
+        logging.error('File {0} does not exists'.format(fname))
+        print('returning -1')
+        return -1
+
+def main_aux(pathlist=None, 
+             reqnum=None, 
+             band=None, 
+             nproc=None, 
+             chunk=None,):
+    ''' Main auxiliaty function to call the code in parallel
+    '''
     if (pathlist is None):
-        # Load from DB, based in reqnum and band
+        # If no set of pull paths is provided, go to the DB and retrieve them,
+        # based on reqnum and band
         fpath = db_red_pixcor(reqnum, band)
     elif (pathlist is not None):
-        # Load the table, with no constraint on filetype, in case path
-        # is extremely large
+        # Load the table
         exp = np.genfromtxt(
             pathlist,
             dtype=[('path','|S200'),],
@@ -277,7 +306,7 @@ def main_aux(pathlist=None, reqnum=None, band=None):
             usecols=0
         )
         fpath = exp['path']
-    # Remove duplicates
+    # Remove duplicates using np.unique capabilities
     uarr, uidx, uinverse, ucounts= np.unique(
         fpath,
         return_index=True,
@@ -294,8 +323,13 @@ def main_aux(pathlist=None, reqnum=None, band=None):
     # parallel. Then stack the set of section and calculate the median 
     # of each pixel.
     #
+
+    
     # coo list contains [x0, y0, x1, y1]
+    # here create an iterator in X and Y 
     coo = [0, 0, 256, 256]
+    
+    
     # coo: coordinates, ext: extension to read from the FITS file, 
     # delta: side size (pixel) of the square used to sample the FITS file 
     kw_section = {
@@ -303,25 +337,26 @@ def main_aux(pathlist=None, reqnum=None, band=None):
         'ext' : 0,
         'delta' : 256,
     }
-    
-    nproc = mp.cpu_count()
-    logging.info('Launch {0} parallel processes'.format(nproc))
-    P1 = mp.Pool(processes=nproc)
-    
-    # chunk = int(4096 / kw_section['delta'] * 2048 / kw_section['delta'])
+    # Setup the parallel call
     # The value for chunk will help prevent memory errors. "Chops the iterable 
     # into a number of chunks which it submits to the process pool as separate 
     # tasks"
-    chunk = 4
-
+    if (nproc is None):
+        nproc = mp.cpu_count()
+    if (chunk is None):
+        chunk = int( np.ceil(fpath.size / nproc) )
+    logging.info('Launch {0} parallel processes'.format(nproc))
+    P1 = mp.Pool(processes=nproc)
+    # Call using partial() or constructed list
     try:
-        print('CHECK FOR LIST_AUX IN FITS')
-        '''Wrong call of fits_section, Do it not with dict'''
-        exit()
-        partial_aux = partial(fits_section, **kw_section)
+        partial_aux = partial(
+            fits_section, 
+            [kw_section['coo'], kw_section['ext'], kw_section['delta']]
+        )
         t0 = time.time()
         # map_async does not block the processes, and executes non-ordered
-        box_i = P1.map_async(partial_aux, fpath, chunk)
+        boxi = P1.map_async(partial_aux, fpath, chunk)
+        boxi.wait()  
         t1 = time.time()
     except:
         logging.warning('No available module: partial')
@@ -331,34 +366,33 @@ def main_aux(pathlist=None, reqnum=None, band=None):
                      kw_section['delta']) for fnm in fpath]
         t0 = time.time()
         boxi = P1.map_async(fits_section, aux_list, chunk)
+        boxi.wait()
         t1 = time.time()
-    boxi.wait()
-    aux_boxi = boxi.get()
-    print(aux_boxi[-1])
-    # =================
+    boxi = boxi.get()
+    # At this point the Pool has returned a list, containig the stamps
+    # for all the CCDs
+    # Call the median image generator, using np.nditer(), with a 3D array
+    x3d = np.dstack(boxi)
+    z_median = stat_cube(x3d, (lambda: np.median)())
 
+    # fits = fitsio.FITS(os.path.join(direc,fnm),'rw')
+    # fits.write(M_w)
+    # fits[-1].write_checksum()
+    # fits.close()
     # Go pixel by pixel doing the median
 
-def fits_section(aux_list):
-    ''' Load fits file section bin size of sq pixels
-    ext = 0
-    delta = 256
+def stat_cube(x3d, func):
+    ''' Function to calculate the median image per pixel, using an input 
+    3dimensional array containing the stamps on which to work.
+    Uses numpy iteration tools
     '''
-    fname, coo, ext, delta = aux_list
-    x0, y0, x1, y1 = coo
-    if (int(abs(x1 - x0)) == delta) and (int(abs(y1 - y0)) == delta):        
-        pass
-    else:
-        logging.warning('Coodinates don\'t have the size of the input bin')
-    if os.path.exists(fname):
-        fits = fitsio.FITS(fname)
-        sq = np.copy(fits[ext][y0:y1 , x0:x1])
-        fits.close()
-        return sq
-    else:
-        logging.error('File {0} does not exists'.format(fname))
-        print('returning -1')
-        return -1
+    out = np.zeros_like(x3d[:, :, 0])
+    it = np.nditer(x3d[:, :, 0], flags=['multi_index'])
+    while not it.finished:
+        i1, i2 = it.multi_index
+        out[i1, i2] = func(x3d[i1, i2, :])
+        it.iternext()
+    return out
 
 if __name__ == '__main__':
     txt_gral = 'Code to create a median image from an input list of expnum'
@@ -375,11 +409,17 @@ if __name__ == '__main__':
     par.add_argument('--req', help=h2, type=int, default=r)
     h3 = 'Band in case no --pathlist was feeded. Default: {0}'.format(b)
     par.add_argument('--band', help=h3, type=str, default=b)
+    h4 = 'Number or parallel processes to run. Default is number of CPUs'
+    par.add_argument('-n', help=h4, metavar='', type=int)
+    h5 = 'Chunks on which to divide the inputs in the processes. Default: 1'
+    par.add_argument('-c', help=h5, metavar='', type=int)
     # Parse args
     par = par.parse_args()
     in_kw = {
         'pathlist' : par.pathlist,
         'reqnum' : par.req,
         'band' : par.band,
+        'nproc' : par.n,
+        'chunk' : par.c,
     }
     main_aux(**in_kw)
