@@ -24,21 +24,23 @@ import multiprocessing as mp
 import easyaccess as ea
 
 
-def db_red_pixcor(reqnum, band,
+def db_red_pixcor(reqnum, band, ccdnum,
                   root_path='/archive_data/desarchive/'):
     ''' Simple function to get path information from DB, for a set under same
     reqnum and band
     '''
     connect = ea.connect('desoper')
     cursor = connect.cursor()
-    q = 'select fai.path, fai.filename, fai.compression, e.band'
-    q += ' from file_archive_info fai, desfile d, pfw_attempt att, exposure e'
+    q = 'select fai.path, fai.filename, fai.compression, im.band, im.ccdnum'
+    q += ' from file_archive_info fai, desfile d, pfw_attempt att, image im'
     q += ' where fai.desfile_id=d.id'
     q += ' and d.filetype=\'red_pixcor\''
     q += ' and d.pfw_attempt_id=att.id'
+    q += ' and att.id=im.pfw_attempt_id'
     q += ' and att.reqnum={0}'.format(reqnum)
-    q += ' and att.unitname=CONCAT(\'D00\', e.expnum)'
-    q += ' and e.band=\'{0}\''.format(band)
+    q += ' and im.filename=fai.filename'
+    q += ' and im.ccdnum={0}'.format(ccdnum)
+    q += ' and im.band=\'{0}\''.format(band)
     outtab = connect.query_to_pandas(q)
     # Transform column names to lower case
     outtab.columns = map(str.lower, outtab.columns)
@@ -91,6 +93,7 @@ def stat_cube(x3d, func):
 def main_aux(pathlist=None, 
              reqnum=None, 
              band=None, 
+             ccdnum=None,
              nproc=None, 
              chunk=None,
              px_side=None,
@@ -100,7 +103,7 @@ def main_aux(pathlist=None,
     if (pathlist is None):
         # If no set of pull paths is provided, go to the DB and retrieve them,
         # based on reqnum and band
-        fpath = db_red_pixcor(reqnum, band)
+        fpath = db_red_pixcor(reqnum, band, ccdnum)
     elif (pathlist is not None):
         # Load the table
         exp = np.genfromtxt(
@@ -234,6 +237,8 @@ if __name__ == '__main__':
     par.add_argument('--req', help=h2, type=int, default=r)
     h3 = 'Band in case no --pathlist was feeded. Default: {0}'.format(b)
     par.add_argument('--band', help=h3, type=str, default=b)
+    h3b = 'CCD number in case no --pathlist was feeded'
+    par.add_argument('--ccd', help=h3b, type=int)
     h4 = 'Number or parallel processes to run. Default is number of CPUs'
     par.add_argument('-n', help=h4, metavar='', type=int)
     h5 = 'Chunks on which to divide the inputs in the processes. Default: 1'
@@ -253,5 +258,6 @@ if __name__ == '__main__':
         'chunk' : par.c,
         'label' : par.label,
         'px_side' : par.square,
+        'ccdnum' : par.ccd,
     }
     main_aux(**in_kw)
