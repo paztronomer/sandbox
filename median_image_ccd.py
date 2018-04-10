@@ -9,20 +9,19 @@ import numpy as np
 import pandas as pd
 import fitsio
 import pickle
-import logging
 import argparse
+import logging
+# Setup logging
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+)
 try:
     import partial
 except:
     logging.warning('No available module: partial')
 import multiprocessing as mp
 import easyaccess as ea
-
-# Setup logging
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-)
 
 
 def db_red_pixcor(reqnum, band,
