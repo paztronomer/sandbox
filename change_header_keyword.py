@@ -89,10 +89,14 @@ if __name__ == '__main__':
     #
     t0 = 'Space separated list of keywords to be modified'
     arg.add_argument('-k', metavar='list', help=t0, nargs='+')
-    t1 = 'Space separated list of strings to look for. One per input keyword'
+    t1 = 'Space separated list of strings to look for. One per input keyword.'
+    t1 += ' If multiple words compose the string, use \' \' to enclose them.'
+    t1 += ' Example: \'SDSS z filter c0003\'' 
     arg.add_argument('-s0', metavar='initial', help=t1, nargs='+')
     t2 = 'Space separated list of strings used as replacement.'
     t2 += ' One per input keyword'
+    t2 += ' If multiple words compose the string, use \' \' to enclose them.'
+    t2 += ' Example: \'WISE W1 filter\'' 
     arg.add_argument('-s1', metavar='final', help=t2, nargs='+')
     t3 = 'Space separated list of parent paths were to recursive loof for FITS'
     t3 += ' files. All keywords will be searched on every found file'
