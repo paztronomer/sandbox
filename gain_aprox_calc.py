@@ -45,10 +45,10 @@ def get_info01(in_list):
     """
     bi, df, nite, ext = in_list
     print('MP in nite:{0}'.format(nite))
-    # Get all files, avoid first
+    # Get all files
     res_nite = []
     # Bias
-    for idx, row in bi.iloc[1:].iterrows():
+    for idx, row in bi.iterrows():
         regx = os.path.join(row['path'], '*fits')
         f = glob.glob(regx)
         for fits in f:
@@ -67,7 +67,7 @@ def get_info01(in_list):
             )
             hdu.close()
     # Dome flats
-    for idx, xx in df.iloc[1:].iterrows():
+    for idx, xx in df.iterrows():
         regx = os.path.join(xx['path'], '*fits')
         l = glob.glob(regx)
         for fits in l:
