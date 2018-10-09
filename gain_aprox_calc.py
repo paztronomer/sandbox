@@ -26,12 +26,12 @@ import os
 import glob
 import time
 import logging
+import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 import fitsio
-
 
 def get_info01(in_list):
     """ Auxiliary method to get information from FITS files
@@ -93,11 +93,7 @@ def eq01(inlist):
     - fnm_f1, fnm_f2: filenames of both dome flats
     - fnm_b1, fnm_b2: filenames of both bias
     """
-    fnm_f1, fnm_f2, fnm_b1, fnm_b2, band, ccd, nite = inlist 
-    box_side=256 
-    ext=0
-    w_amp=1024
-    h_amp=2048
+    fnm_f1, fnm_f2, fnm_b1, fnm_b2, band, ccd, nite, box_side, ext, w_amp, h_amp = inlist 
     #
     print(band, ccd)
     # Open fits
@@ -151,19 +147,29 @@ def eq01(inlist):
 
 def method01(bias, dflat, 
              fill_info=False, 
-             outname='header_info_tab.csv',
-             gainout='calc_gain_perAmp.csv',):
+             outname=None,
+             gainout=None,
+             box_side=256,
+             ext=0,
+             w_amp=1024,
+             h_amp=2048,):
     """ Calculates gain changes  
     Inputs
     - tab: dataframe, must contain columns path, reqnum, unitname (=nite)
     """
+    if (outname is not None):
+        fill_info = True
     # Define pairs of bias, domeflats. Use bias simply by exposure number 
     # order. 
     # Do calculation by band, by CCD, by amplifier
     # Params to read FITS section
-    ext = 0
-    a1, a2, a3, a4 = 2047 - 128, 2047 + 128, 511 - 128, 511 + 128 
-    b1, b2, b3, b4 = 2047 - 128, 2047 + 128, 1535 - 128, 1535 + 128 
+    a1, a2 = (h_amp - 1) - int(box_side / 2), (h_amp - 1) + int(box_side / 2)
+    a3 = (int(w_amp / 2) - 1) - int(box_side / 2), 
+    a4 = (int(w_amp / 2) - 1) + int(box_side / 2) 
+    b1, b2 = (h_amp - 1) - int(box_side / 2), (h_amp - 1) + int(box_side / 2)
+    aux_2amp_w = (w_amp * 2) - int(w_amp / 2) - 1
+    b3 = aux_2amp_w - int(box_side / 2)
+    b4 = aux_2amp_w + int(box_side / 2) 
     # By reqnum
     nite = bias['unitname'].unique()
     # Lists to harbor
@@ -255,6 +261,10 @@ def method01(bias, dflat,
                         bnd, 
                         ccd,
                         nx,
+                        box_side,
+                        ext,
+                        w_amp,
+                        h_amp,
                     ])
     # Run in parallel
     P1 = mp.Pool(processes=mp.cpu_count())
@@ -269,57 +279,77 @@ def method01(bias, dflat,
     res = pd.DataFrame(data=g_ls, columns=cols)
     # Write out
     res.to_csv(gainout, index=False, header=True)
-    print('Wrriten {0}'.format(gainout))
+    print('Writen {0}'.format(gainout))
     return True     
-    
-    """
-        # Do the operations on this night, per CCD
-        i_bi = pd.DataFrame(bias_data, 
-                            columns=['nite', 'exp', 'ccd', 'ga', 'gb', 'fnm'])
-        i_f = pd.DataFrame(
-            dflat_data,
-            columns=['nite', 'exp', 'ccd', 'band', 'ga', 'gb', 'fnm']
-        )
-        #
-        # Do it for 4 pairs of measurements
-        # Do it per band
-        for bx in i_f['band'].unique():
-            # Do it per CCD
-            for c in i_f['ccd'].unique():
-                b_ind = i_bi.loc[i_bi['ccd'] == c]
-                f_ind = i_f.loc[(i_f['ccd'] == c) & (i_f['band'] == bx)]
-                print(b_ind)
-                print(f_ind)
-                print(b_ind.index)
-                print(f_ind.index)
-                '''
-                b_x1 = 
-                b_x2 =
-                f_x1 = 
-                f_x2 = 
-                pass
-                # Data
-                x1 = hdu[ext][a1:a2 + 1, a3:a4 + 1]
-                x2 = hdu[ext][b1:b2 + 1, b3:b4 + 1]
-                '''
-        print('Exiting...')
-    """
 
 if __name__ == '__main__':
+    txt_desc = 'Gain calculation using the Janesick method. Note we suppose'
+    txt_desc += ' each CCD is DES-like, two amplifiers side by side'
+    txt_desc += ' attached by the longer axis.'
+    txt_desc += ' For method see:'
+    txt_desc += ' http://stsdas.stsci.edu/cgi-bin/gethelp.cgi?findgain'
+    arg = argparse.ArgumentParser(description=txt_desc)
+    #
+    h0 = 'Table containing the BIAS paths to the xtalked CCDs. Columns: PATH,'
+    h0 += 'REQNUM,UNITNAME. Format: CSV'
+    arg.add_argument('bias', help=h0)
+    h1 = 'Table containing the DOME FLAT paths to the xtalked CCDs. Columns: '
+    h1 += 'PATH,REQNUM,UNITNAME. Format: CSV'
+    arg.add_argument('dflat', help=h1)
+    default_prefix = '/archive_data/desarchive'
+    h2 = 'Prefix to be attached before every BIAS/DOME FLAT path. For no'
+    h2 += ' prefix use the variable followed by blank space.'
+    h2 += ' Default: {0}'.format(default_prefix)
+    arg.add_argument('--pre', help=h2, default=default_prefix)
+    h3 = 'Output name for the file containing basic info and gain from each'
+    h3 += ' image header. If no name is given, no file will be generated'
+    arg.add_argument('--head', help=h3)
+    default_gain_fnm = 'gain_PID{0}.csv'.format(os.getpid())
+    h4 = 'Output name for the gain calculation CSV table. Default:'
+    h4 += ' {0}'.format(default_gain_fnm)
+    arg.add_argument('--res', help=h4, default=default_gain_fnm)
+    # 
+    gain_box = 256 
+    ext = 0
+    width_amp = 1024
+    height_amp = 2048
+    h5 = 'Box side in pix for GAIN measurement. Default: {0}'.format(gain_box)
+    arg.add_argument('--box', help=h5, default=gain_box)
+    h6 = 'Extension from where to read the image. Default: {0}'.format(ext)
+    arg.add_argument('--ext', help=h6, default=ext)
+    h7 = 'Dimensions of each amplifier. Format: long-axis short-axis'
+    h7 += ' Default: {0} {1}'.format(height_amp, width_amp)
+    arg.add_argument('--dim', help=h7, default=[height_amp, width_amp], 
+                     nargs=2)
+    #
+    arg = arg.parse_args()
+    #
+    # Before to run, prepare the dataframes
+    #
+    """
+    outname='header_info_tab.csv',
+    gainout='calc_gain_perAmp.csv'
+    box_side=256 
+    ext=0
+    w_amp=1024
+    h_amp=2048
+    """
     # Directories where to look for biases and flats
-    p_dir = '/archive_data/desarchive/'
-    df_bias = pd.read_csv('set01_bias.csv')
+    df_bias = pd.read_csv(arg.bias)
     df_bias.columns = df_bias.columns.map(str.lower)
     df_bias['unitname'] = df_bias['unitname'].map(int)
-    df_bias['path'] = map(lambda x: os.path.join(p_dir, x), df_bias['path'])
+    df_bias['path'] = map(lambda x: os.path.join(arg.pre, x), 
+                          df_bias['path'])
     #
-    df_dflat = pd.read_csv('set01_dflat.csv')
+    df_dflat = pd.read_csv(arg.dflat)
     df_dflat.columns = df_dflat.columns.map(str.lower)
     df_dflat['unitname'] = df_dflat['unitname'].map(int)
-    df_dflat['path'] = map(lambda x: os.path.join(p_dir, x), df_dflat['path'])
-
+    df_dflat['path'] = map(lambda x: os.path.join(arg.pre, x), 
+                           df_dflat['path'])
     # Call the methods
     t0 = time.time()
-    method01(df_bias, df_dflat, fill_info=False)
+    method01(df_bias, df_dflat, outname=arg.head, gainout=arg.res,
+             box_side=arg.box, ext=arg.ext, 
+             h_amp=arg.dim[0], w_amp=arg.dim[1],)
     t1 = time.time()
     print('Elapsed time: {0:.2f}'.format((t1 - t0) / 60.))
