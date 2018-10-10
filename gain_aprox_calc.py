@@ -19,7 +19,6 @@ G = -----------------------------------------------
 
 2) Have dome flats with different exposure times. Seelct boxes on different
 images and do a plot: mean (ADU, box) vs variance (ADU, box)
-
 """
 
 import os
@@ -93,7 +92,8 @@ def eq01(inlist):
     - fnm_f1, fnm_f2: filenames of both dome flats
     - fnm_b1, fnm_b2: filenames of both bias
     """
-    fnm_f1, fnm_f2, fnm_b1, fnm_b2, band, ccd, nite, box_side, ext, w_amp, h_amp = inlist 
+    fnm_f1, fnm_f2, fnm_b1, fnm_b2, band, ccd, nite = inlist[:5] 
+    box_side, ext, w_amp, h_amp, bpm_path = inlist[5:] 
     #
     print(band, ccd)
     # Open fits
@@ -128,10 +128,49 @@ def eq01(inlist):
     f2b = h_f2[ext][y0b : y1b, x0b : x1b]
     b1b = h_b1[ext][y0b : y1b, x0b : x1b]
     b2b = h_b2[ext][y0b : y1b, x0b : x1b]
+    #
+    # Apply the BPMs to the bias and dome flats
+    #
+    # Path to BPMs
+    fnm = glob.glob(os.path.join(bpm_path, '*_c{0:02}_*'.format(ccd)))
+    if (len(fnm) == 0):
+        logging.warning('No BPM for CCD {0} in {1}'.format(ccd, bpm_path))
+        # Create non-masked regions
+        bpm_a = np.zeros_like(f1a)
+        bpm_b = np.zeros_like(f1b)
+    elif (len(fnm) > 1):
+        logging.error('Multiple BPMs found for CCD {0}. Exiting'.format(ccd))
+        exit()
+    elif (len(fnm) == 1):
+        # Read BPM section
+        with fitsio.FITS(fnm[0]) as fits:
+            bpm_a = np.copy(fits[ext][y0a : y1a, x0a : x1a])
+            bpm_b = np.copy(fits[ext][y0b : y1b, x0b : x1b])
+    # Apply the BPM to the images 
+    f1a = np.ma.masked_where(bpm_a > 0, f1a)
+    f2a = np.ma.masked_where(bpm_a > 0, f2a)
+    b1a = np.ma.masked_where(bpm_a > 0, b1a)
+    b2a = np.ma.masked_where(bpm_a > 0, b2a)
+    #
+    f1b = np.ma.masked_where(bpm_b > 0, f1b) 
+    f2b = np.ma.masked_where(bpm_b > 0, f2b)
+    b1b = np.ma.masked_where(bpm_b > 0, b1b)
+    b2b = np.ma.masked_where(bpm_b > 0, b2b)
+    #
+    #
     # Equation
     def g(f1, f2, b1, b2):
-        g = (np.mean(f1) + np.mean(f2)) - (np.mean(b1))
-        g /= (np.power(np.std(f2 - f1), 2) - np.power(np.std(b2 - b1), 2))
+        # Check if masked. Here we supposse all arrays are either masked or
+        # unmasked
+        if (np.ma.is_masked(f1)):
+            aux1_g = np.ma.power(np.ma.std(f2 - f1), 2) 
+            aux2_g = np.ma.power(np.ma.std(b2 - b1), 2)
+            g = (np.ma.mean(f1) + np.ma.mean(f2)) 
+            g -= (np.ma.mean(b1) + np.ma.mean(b2))
+            g /= (aux1_g - aux2_g)
+        else:
+            g = (np.mean(f1) + np.mean(f2)) - (np.mean(b1) + np.mean(b2))
+            g /= (np.power(np.std(f2 - f1), 2) - np.power(np.std(b2 - b1), 2))
         return g
     # Gain
     ga = g(f1a, f2a, b1a, b2a)
@@ -152,13 +191,12 @@ def method01(bias, dflat,
              box_side=256,
              ext=0,
              w_amp=1024,
-             h_amp=2048,):
+             h_amp=2048,
+             bpm_path=None,): 
     """ Calculates gain changes  
     Inputs
     - tab: dataframe, must contain columns path, reqnum, unitname (=nite)
     """
-    if (outname is not None):
-        fill_info = True
     # Define pairs of bias, domeflats. Use bias simply by exposure number 
     # order. 
     # Do calculation by band, by CCD, by amplifier
@@ -265,6 +303,7 @@ def method01(bias, dflat,
                         ext,
                         w_amp,
                         h_amp,
+                        bpm_path,
                     ])
     # Run in parallel
     P1 = mp.Pool(processes=mp.cpu_count())
@@ -301,9 +340,15 @@ if __name__ == '__main__':
     h2 += ' prefix use the variable followed by blank space.'
     h2 += ' Default: {0}'.format(default_prefix)
     arg.add_argument('--pre', help=h2, default=default_prefix)
-    h3 = 'Output name for the file containing basic info and gain from each'
-    h3 += ' image header. If no name is given, no file will be generated'
+    h2a = 'Path where BPMs are located. If the \'--pre\' option is selected,'
+    h2a +=  ' then the prefix will be attached to this path too'
+    arg.add_arguemnt('--bpm', help=h2a)
+    h3 = 'Filename for the file containing basic info and gain from each'
+    h3 += ' image header'
     arg.add_argument('--head', help=h3)
+    h3a = 'Flag to calculate the table containing the basic info and gain'
+    h3a += ' from header. Default is True'
+    arg.add_argument('--flag1', help=h3a, action='store_false')
     default_gain_fnm = 'gain_PID{0}.csv'.format(os.getpid())
     h4 = 'Output name for the gain calculation CSV table. Default:'
     h4 += ' {0}'.format(default_gain_fnm)
@@ -326,14 +371,6 @@ if __name__ == '__main__':
     #
     # Before to run, prepare the dataframes
     #
-    """
-    outname='header_info_tab.csv',
-    gainout='calc_gain_perAmp.csv'
-    box_side=256 
-    ext=0
-    w_amp=1024
-    h_amp=2048
-    """
     # Directories where to look for biases and flats
     df_bias = pd.read_csv(arg.bias)
     df_bias.columns = df_bias.columns.map(str.lower)
@@ -349,7 +386,9 @@ if __name__ == '__main__':
     # Call the methods
     t0 = time.time()
     method01(df_bias, df_dflat, outname=arg.head, gainout=arg.res,
+             fill_info=arg.flag1,
              box_side=arg.box, ext=arg.ext, 
-             h_amp=arg.dim[0], w_amp=arg.dim[1],)
+             h_amp=arg.dim[0], w_amp=arg.dim[1],
+             bpm_path=arg.bpm,)
     t1 = time.time()
     print('Elapsed time: {0:.2f}'.format((t1 - t0) / 60.))
