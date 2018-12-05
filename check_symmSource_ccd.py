@@ -14,6 +14,42 @@ from astropy.visualization import (MinMaxInterval, SqrtStretch,
                                    ImageNormalize, ZScaleInterval)
 import fitsio
 
+def draw_ellipse():
+    # This method was saved for simplicity but is not working
+    # Plot the stamp using min/max coordinates, adding the ellipse
+    fig, ax = plt.subplots(1, 2, figsize=(4, 2))
+    im = ax[0].imshow(stamp, origin='lower', cmap='gray_r', 
+                      interpolation='none')
+    # Plot centroid
+    ax[0].plot(xcnt, ycnt, 'ro')
+    # Plot ellipse
+    ellipse = mpatches.Ellipse([xcnt, ycnt], 
+                               2 * a, 
+                               2 * b, 
+                               angle=theta,
+                               edgecolor='yellow', 
+                               facecolor=None, 
+                               fill=False, 
+                               linewidth=1.5)
+    circle = mpatches.Circle([xcnt, ycnt], 
+                              radius=2 * a, 
+                              edgecolor='tomato',
+                              linestyle='-',
+                              facecolor=None, 
+                              fill=False, 
+                              linewidth=1.5)
+    ax[0].add_artist(ellipse)
+    ax[0].add_artist(circle)
+    # Draw lines for circle section
+    ax[0].plot([xcnt, xl], [ycnt, yl_up], '-', lw=1, color='lime')
+    ax[0].plot([xcnt, xl], [ycnt, yl_dw], '-', lw=1, color='lime')
+    ax[0].plot([xcnt, xr], [ycnt, yr_up], '-', lw=1, color='lime')
+    ax[0].plot([xcnt, xr], [ycnt, yr_dw], '-', lw=1, color='lime')
+    # Set info
+    txt0 = '({0}, {1}), a/b={2:.2f}'.format(xcnt, ycnt, a / b)
+    ax[0].set_title(txt0)
+    plt.show()
+
 def open_fits(fnm1, fnm2, ext1=1, ext2=2):
     """ Open both files, the image file and the catalog
     """
@@ -196,15 +232,17 @@ def region_lr(cnt_coo, a,
     # Return only left/right
     return ma_left, ma_right
 
-def stat():
-    """ 
+def masked_stat(ma_x):
+    """ Receives a masked array and performs some basic statistics
     """
+    ma_x = ma_x.compressed()
     mad = lambda x: np.median(np.abs(x - np.median(x)))
-    print(np.mean(area_l), np.std(area_l), np.mean(area_r), np.std(area_r),
-          mad(area_l), mad(area_r), mad(np.r_[area_l, area_r])) 
+    out = [mad(ma_x), np.mean(ma_x), np.std(ma_x), ma_x.size]
+    return out
 
-
-def aux_main(d0_range=[1, 4096], d1_range=[1024, 2048 - 100]):
+def aux_main(outname='2region_stat.csv',
+             d0_range=[1, 4096], 
+             d1_range=[1024, 2048 - 100]):
     """ Run the processing
     Inputs
     - d0_range: select the entire range in long dimension
@@ -230,6 +268,9 @@ def aux_main(d0_range=[1, 4096], d1_range=[1024, 2048 - 100]):
     fnm2 = [y1, y2]
     ccd = [ccd]
 
+    # Results list to construct the dataframe
+    res = []
+
     for i in range(len(fnm1)):
         fits_img, fits_cat = open_fits(fnm1[i], fnm2[i])
         sci, h_sci = fits_img
@@ -238,6 +279,51 @@ def aux_main(d0_range=[1, 4096], d1_range=[1024, 2048 - 100]):
         dfcat = table_catalog(cat, h_cat)
         # Remove unused catalog array and header
         del cat, h_cat
+        # Select stars in the patch of interest
+        c1 = (dfcat['x_image'] >= d1_range[0])
+        c2 = (dfcat['x_image'] <= d1_range[1])
+        c3 = (dfcat['y_image'] >= d0_range[0])
+        c4 = (dfcat['y_image'] <= d0_range[1])
+        cond1 = c1 & c2
+        cond2 = c3 & c4
+        # Dataframe of the centroids of interest
+        # Note the centroids are decimal
+        sel = dfcat.loc[cond1 & cond2]
+        
+        # Iterate over all the objects in the region. For each of them 
+        # calculate the left/right flux statistics
+       
+        cnt_x = sel['x_image'].values
+        cnt_y = sel['y_image'].values
+        a = sel['a_image'].values
+
+        # Using the above parameters define 2 circular regions 
+        r_left, r_right = region_lr([cnt_x[0], cnt_y[0]], a[0], 
+                                    angle_lr=[np.pi, 0], 
+                                    alpha=22.5, 
+                                    img=sci)
+        
+        # Get the statistics for each region
+        st_l = masked_stat(r_left)
+        st_r = masked_stat(r_right)
+
+        # Create lists to be saved into a dataframe
+        expnum = h_sci['EXPNUM']
+        ccdnum = h_sci['CCDNUM']
+        nite = int(h_sci['NITE'])
+        band = h_sci['BAND'].strip()
+        region = '[{0}:{1},{2}:{3}]'.format(*d1_range, *d0_range)
+        # 
+        aux_l = [expnum, ccdnum, nite, band, region] + st_l
+        aux_r = [expnum, ccdnum, nite, band, region] + st_r
+        #
+        res.append(aux_l)
+        res.append(aux_r)
+
+        # Seems that a higher MAD and lower mean is a good test for a healthy
+        # stellar profile
+        # Run on a set of bad and good exposures.
+        
         # ---------------------------------------------------------------------
         # Construct an quick assessment plot, based in basic statistics 
         if False:
@@ -296,72 +382,14 @@ def aux_main(d0_range=[1, 4096], d1_range=[1024, 2048 - 100]):
             ycnt -= ymin
             xcnt, ycnt = int(xcnt), int(ycnt)
         # ---------------------------------------------------------------------
-        # Select stars in the patch of interest
-        c1 = (dfcat['x_image'] >= d1_range[0])
-        c2 = (dfcat['x_image'] <= d1_range[1])
-        c3 = (dfcat['y_image'] >= d0_range[0])
-        c4 = (dfcat['y_image'] <= d0_range[1])
-        cond1 = c1 & c2
-        cond2 = c3 & c4
-        # Dataframe of the centroids of interest
-        # Note the centroids are decimal
-        sel = dfcat.loc[cond1 & cond2]
-        
-        # Iterate over all the objects in the region. For each of them 
-        # calculate the left/right flux
-       
-        cnt_x = sel['x_image'].values
-        cnt_y = sel['y_image'].values
-        a = sel['a_image'].values
-        region_lr([cnt_x[0], cnt_y[0]], a[0], 
-                  angle_lr=[np.pi, 0], alpha=22.5, img=sci)
-        
-        exit()
-        
-        # Seems that a higher MAD and lower mean is a good test for a healthy
-        # stellar profile
-        
-        
-        # Run on a set of bad and good exposures.
-
-    exit()
-    #
-    #
-    # Plot the stamp using min/max coordinates, adding the ellipse
-    fig, ax = plt.subplots(1, 2, figsize=(4, 2))
-    im = ax[0].imshow(stamp, origin='lower', cmap='gray_r', 
-                      interpolation='none')
-    # Plot centroid
-    ax[0].plot(xcnt, ycnt, 'ro')
-    # Plot ellipse
-    ellipse = mpatches.Ellipse([xcnt, ycnt], 
-                               2 * a, 
-                               2 * b, 
-                               angle=theta,
-                               edgecolor='yellow', 
-                               facecolor=None, 
-                               fill=False, 
-                               linewidth=1.5)
-    circle = mpatches.Circle([xcnt, ycnt], 
-                              radius=2 * a, 
-                              edgecolor='tomato',
-                              linestyle='-',
-                              facecolor=None, 
-                              fill=False, 
-                              linewidth=1.5)
-    ax[0].add_artist(ellipse)
-    ax[0].add_artist(circle)
-    # Draw lines for circle section
-    ax[0].plot([xcnt, xl], [ycnt, yl_up], '-', lw=1, color='lime')
-    ax[0].plot([xcnt, xl], [ycnt, yl_dw], '-', lw=1, color='lime')
-    ax[0].plot([xcnt, xr], [ycnt, yr_up], '-', lw=1, color='lime')
-    ax[0].plot([xcnt, xr], [ycnt, yr_dw], '-', lw=1, color='lime')
-    # Set info
-    txt0 = '({0}, {1}), a/b={2:.2f}'.format(xcnt, ycnt, a / b)
-    ax[0].set_title(txt0)
-    plt.show()
     
-
+    # Save Dataframe
+    df = pd.DataFrame(res, 
+                      columns=['expnum', 'ccdnum', 'nite', 'band', 
+                               'region', 'mad', 'mean', 'std', 'npix']
+    )
+    df.to_csv(outname, index=False, header=True)
+    print('Saved: {0}'.format(outname))
 
 if __name__ == '__main__':
     print(time.ctime())
