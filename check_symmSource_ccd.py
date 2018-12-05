@@ -279,13 +279,14 @@ def aux_main(outname='2region_stat.csv',
         dfcat = table_catalog(cat, h_cat)
         # Remove unused catalog array and header
         del cat, h_cat
-        # Select stars in the patch of interest
+        # Select stars in the patch of interest, and with FLAGS=0
         c1 = (dfcat['x_image'] >= d1_range[0])
         c2 = (dfcat['x_image'] <= d1_range[1])
         c3 = (dfcat['y_image'] >= d0_range[0])
         c4 = (dfcat['y_image'] <= d0_range[1])
+        c5 = (dfcat['flags'] == 0)
         cond1 = c1 & c2
-        cond2 = c3 & c4
+        cond2 = c3 & c4 & c5
         # Dataframe of the centroids of interest
         # Note the centroids are decimal
         sel = dfcat.loc[cond1 & cond2]
@@ -296,93 +297,99 @@ def aux_main(outname='2region_stat.csv',
         cnt_x = sel['x_image'].values
         cnt_y = sel['y_image'].values
         a = sel['a_image'].values
-
-        # Using the above parameters define 2 circular regions 
-        r_left, r_right = region_lr([cnt_x[0], cnt_y[0]], a[0], 
-                                    angle_lr=[np.pi, 0], 
-                                    alpha=22.5, 
-                                    img=sci)
         
-        # Get the statistics for each region
-        st_l = masked_stat(r_left)
-        st_r = masked_stat(r_right)
-
         # Create lists to be saved into a dataframe
         expnum = h_sci['EXPNUM']
         ccdnum = h_sci['CCDNUM']
         nite = int(h_sci['NITE'])
         band = h_sci['BAND'].strip()
         region = '[{0}:{1},{2}:{3}]'.format(*d1_range, *d0_range)
-        # 
-        aux_l = [expnum, ccdnum, nite, band, region] + st_l
-        aux_r = [expnum, ccdnum, nite, band, region] + st_r
-        #
-        res.append(aux_l)
-        res.append(aux_r)
 
-        # Seems that a higher MAD and lower mean is a good test for a healthy
-        # stellar profile
-        # Run on a set of bad and good exposures.
-        
-        # ---------------------------------------------------------------------
-        # Construct an quick assessment plot, based in basic statistics 
-        if False:
-            # Quick plot distribution of a, b
-            fig, ax = plt.subplots(2,2)
-            sel = dfcat.loc[dfcat['x_image'] > 1024]
-            sel = sel.loc[sel['theta_image'].abs() < 10]
-            sel0 = dfcat.loc[dfcat['x_image'] < 1024]
-            sel0 = sel0.loc[sel0['theta_image'].abs() < 10]
-            ax[0, 0].hist(sel['a_image'] / sel['b_image'], 
-                          histtype='step', bins=20,
-                          color='g')
-            ax[0, 1].plot(sel['a_image'] / sel['b_image'], 
-                          sel['theta_image'], 'go')
-            ax[1, 0].hist(sel0['a_image'] / sel0['b_image'], 
-                          histtype='step', bins=20,
-                          color='r')
-            ax[1, 1].plot(sel0['a_image'] / sel0['b_image'], 
-                          sel0['theta_image'], 'ro')
-            ax[0, 0].set_ylabel('N')
-            ax[1, 0].set_ylabel('N')        
-            ax[1, 0].set_xlabel(r'$\frac{a}{b}$')
-            ax[0, 1].set_ylabel(r'$\theta$')
-            ax[1, 1].set_ylabel(r'$\theta$')
-            ax[1, 1].set_xlabel(r'$\frac{a}{b}$')
-            plt.suptitle(r'$\frac{a}{b}$ vs $\theta$ statistics. Cuts applied')
-            plt.subplots_adjust(wspace=0.4)
-            plt.show()
-        # Coordinates of a star I know has horizontal banding
-        # x0, y0 = 1095, 1600
-        # x0, y0 = 386, 1527 # left amplifier good source
-        # x0, y0 = 1253, 3068
-        # x0, y0 = 1120, 3554
-        if False:
-            # Get its params by locating the closest entry in the table
-            p = np.power(dfcat['x_image'] - x0, 2)
-            p += np.power(dfcat['y_image'] - y0, 2)
-            p = np.sqrt(p)
-            argmin_p = p.idxmin()
-            # Print position arguments
-            print(dfcat.iloc[argmin_p][['x_image', 'y_image', 
-                                       'xmin_image', 'xmax_image',
-                                       'ymin_image', 'ymax_image',
-                                       'a_image', 'b_image', 'theta_image',
-                                       'number']])
-            print('Distance = {0:.3f} pix'.format(p.iloc[argmin_p]))
-            # Get needed parameters for displaying the region around the source 
-            xcnt, ycnt, xmin, xmax, ymin, ymax, a, b, theta = dfcat.iloc[argmin_p][
-                ['x_image', 'y_image',
-                'xmin_image', 'xmax_image', 
-                'ymin_image', 'ymax_image',
-                'a_image', 'b_image', 'theta_image']
-            ].values.astype(int)
-            stamp = sci[ymin - 1:ymax - 1, xmin - 1:xmax -1]
-            xcnt -= xmin
-            ycnt -= ymin
-            xcnt, ycnt = int(xcnt), int(ycnt)
-        # ---------------------------------------------------------------------
-    
+        t0 = time.time()
+        for obj in range(cnt_x.size): 
+            # Using the above parameters define 2 circular regions 
+            try:
+                r_left, r_right = region_lr([cnt_x[obj], cnt_y[obj]], a[obj], 
+                                            angle_lr=[np.pi, 0], 
+                                            alpha=22.5, 
+                                            img=sci)
+            except:
+                print(sel.iloc[obj]['flags'])
+                exit()
+            # Get the statistics for each region
+            st_l = masked_stat(r_left)
+            st_r = masked_stat(r_right)
+            # 
+            aux_l = [expnum, ccdnum, nite, band, region] + st_l
+            aux_r = [expnum, ccdnum, nite, band, region] + st_r
+            #
+            res.append(aux_l)
+            res.append(aux_r)
+
+            # Seems that a higher MAD and lower mean is a good test for a healthy
+            # stellar profile
+            # Run on a set of bad and good exposures.
+            
+            # ---------------------------------------------------------------------
+            # Construct an quick assessment plot, based in basic statistics 
+            if False:
+                # Quick plot distribution of a, b
+                fig, ax = plt.subplots(2,2)
+                sel = dfcat.loc[dfcat['x_image'] > 1024]
+                sel = sel.loc[sel['theta_image'].abs() < 10]
+                sel0 = dfcat.loc[dfcat['x_image'] < 1024]
+                sel0 = sel0.loc[sel0['theta_image'].abs() < 10]
+                ax[0, 0].hist(sel['a_image'] / sel['b_image'], 
+                              histtype='step', bins=20,
+                              color='g')
+                ax[0, 1].plot(sel['a_image'] / sel['b_image'], 
+                              sel['theta_image'], 'go')
+                ax[1, 0].hist(sel0['a_image'] / sel0['b_image'], 
+                              histtype='step', bins=20,
+                              color='r')
+                ax[1, 1].plot(sel0['a_image'] / sel0['b_image'], 
+                              sel0['theta_image'], 'ro')
+                ax[0, 0].set_ylabel('N')
+                ax[1, 0].set_ylabel('N')        
+                ax[1, 0].set_xlabel(r'$\frac{a}{b}$')
+                ax[0, 1].set_ylabel(r'$\theta$')
+                ax[1, 1].set_ylabel(r'$\theta$')
+                ax[1, 1].set_xlabel(r'$\frac{a}{b}$')
+                plt.suptitle(r'$\frac{a}{b}$ vs $\theta$ statistics. Cuts applied')
+                plt.subplots_adjust(wspace=0.4)
+                plt.show()
+            # Coordinates of a star I know has horizontal banding
+            # x0, y0 = 1095, 1600
+            # x0, y0 = 386, 1527 # left amplifier good source
+            # x0, y0 = 1253, 3068
+            # x0, y0 = 1120, 3554
+            if False:
+                # Get its params by locating the closest entry in the table
+                p = np.power(dfcat['x_image'] - x0, 2)
+                p += np.power(dfcat['y_image'] - y0, 2)
+                p = np.sqrt(p)
+                argmin_p = p.idxmin()
+                # Print position arguments
+                print(dfcat.iloc[argmin_p][['x_image', 'y_image', 
+                                           'xmin_image', 'xmax_image',
+                                           'ymin_image', 'ymax_image',
+                                           'a_image', 'b_image', 'theta_image',
+                                           'number']])
+                print('Distance = {0:.3f} pix'.format(p.iloc[argmin_p]))
+                # Get needed parameters for displaying the region around the source 
+                xcnt, ycnt, xmin, xmax, ymin, ymax, a, b, theta = dfcat.iloc[argmin_p][
+                    ['x_image', 'y_image',
+                    'xmin_image', 'xmax_image', 
+                    'ymin_image', 'ymax_image',
+                    'a_image', 'b_image', 'theta_image']
+                ].values.astype(int)
+                stamp = sci[ymin - 1:ymax - 1, xmin - 1:xmax -1]
+                xcnt -= xmin
+                ycnt -= ymin
+                xcnt, ycnt = int(xcnt), int(ycnt)
+            # ---------------------------------------------------------------------
+    t1 = time.time()
+    print('Elapsed time: {0:.2f} min'.format((t1 - t0) / 60.))
     # Save Dataframe
     df = pd.DataFrame(res, 
                       columns=['expnum', 'ccdnum', 'nite', 'band', 
@@ -393,7 +400,7 @@ def aux_main(outname='2region_stat.csv',
 
 if __name__ == '__main__':
     print(time.ctime())
+
+    # Here: argparse for a list of immasked and cat files
     aux_main()
 
-    exit()
-    # Input a file with CCD, immasked file, catalog file
