@@ -4,6 +4,7 @@
 import os
 import glob
 import time
+import argparse
 import logging
 import numpy as np
 from scipy import interpolate
@@ -242,17 +243,20 @@ def masked_stat(ma_x):
 
 def aux_main(outname='2region_stat.csv',
              d0_range=[1, 4096], 
-             d1_range=[1024, 2048 - 100]):
+             d1_range=[1024, 2048 - 100],
+             table=None,
+             ccdlist=None,
+             ftypes=['red_immask', 'cat_firstcut'],
+             rpath='/archive_data/desarchive'):
     """ Run the processing
     Inputs
     - d0_range: select the entire range in long dimension
     - d1_range: select the right amplifier, cutting off a vertical band at the 
     border for the tapebumps
+    - outname: output name for the CSV results table
+    - table: filename of the CSV table containing t_eff, path, filetype
+    - ccdlist: 
     """
-    
-    # Input a table and iteratively read
-
-
     ccd = 41
     # Call opening of files
     x1 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
@@ -267,6 +271,36 @@ def aux_main(outname='2region_stat.csv',
     fnm1 = [x1, x2]
     fnm2 = [y1, y2]
     ccd = [ccd]
+
+    # Open table, identify filetypes
+    df = pd.read_csv(table)
+    df.columns = df.columns.map(str.lower)
+    # Sort by path
+    df.sort_values(['path'], inplace=True)
+    # Reset index
+    df.reset_index(drop=True, inplace=True)
+    
+    # Create the file list for both filetypes
+    fnm1, fnm2 = [], []
+    if (len(ftypes) != 2):
+        logging.error('More than 2 filetypes. Need to change a block')
+        exit()
+    for c in ccdlist:
+        a = [glob.glob(os.path.join(rpath, x, '*_c{0:02}_*'.format(c)))
+             for x in df.loc[df['filetype'] == ftypes[0], 'path']
+        ]
+        b = [glob.glob(os.path.join(rpath, x, '*_c{0:02}_*'.format(c)))
+             for x in df.loc[df['filetype'] == ftypes[1], 'path']
+        ]
+        if ((len(a) > 0) and (len(b) == len(a))):
+            fnm1 += a
+            fnm2 += b
+        else:
+            logging.warning('CCD:{0} error locating files. Skip'.format(c))
+    # Flatten the arrays, because glob.glob introducesan additional level of
+    # nesting
+    fnm1 = np.array(fnm1).flatten()
+    fnm2 = np.array(fnm2).flatten()
 
     # Results list to construct the dataframe
     res = []
@@ -304,6 +338,8 @@ def aux_main(outname='2region_stat.csv',
         nite = int(h_sci['NITE'])
         band = h_sci['BAND'].strip()
         region = '[{0}:{1},{2}:{3}]'.format(*d1_range, *d0_range)
+        # Alse save T_EFF 
+        t_eff = df.loc[df['expnum'] == expnum, 't_eff'].values[0]
 
         t0 = time.time()
         for obj in range(cnt_x.size): 
@@ -320,8 +356,8 @@ def aux_main(outname='2region_stat.csv',
             st_l = masked_stat(r_left)
             st_r = masked_stat(r_right)
             # 
-            aux_l = [expnum, ccdnum, nite, band, region] + st_l
-            aux_r = [expnum, ccdnum, nite, band, region] + st_r
+            aux_l = [expnum, ccdnum, nite, band, t_eff, region] + st_l
+            aux_r = [expnum, ccdnum, nite, band, t_eff, region] + st_r
             #
             res.append(aux_l)
             res.append(aux_r)
@@ -330,7 +366,7 @@ def aux_main(outname='2region_stat.csv',
             # stellar profile
             # Run on a set of bad and good exposures.
             
-            # ---------------------------------------------------------------------
+            # -----------------------------------------------------------------
             # Construct an quick assessment plot, based in basic statistics 
             if False:
                 # Quick plot distribution of a, b
@@ -377,8 +413,8 @@ def aux_main(outname='2region_stat.csv',
                                            'number']])
                 print('Distance = {0:.3f} pix'.format(p.iloc[argmin_p]))
                 # Get needed parameters for displaying the region around the source 
-                xcnt, ycnt, xmin, xmax, ymin, ymax, a, b, theta = dfcat.iloc[argmin_p][
-                    ['x_image', 'y_image',
+                xcnt, ycnt, xmin, xmax, ymin, ymax, a, b, theta = dfcat.iloc[
+                    argmin_p][['x_image', 'y_image',
                     'xmin_image', 'xmax_image', 
                     'ymin_image', 'ymax_image',
                     'a_image', 'b_image', 'theta_image']
@@ -387,12 +423,12 @@ def aux_main(outname='2region_stat.csv',
                 xcnt -= xmin
                 ycnt -= ymin
                 xcnt, ycnt = int(xcnt), int(ycnt)
-            # ---------------------------------------------------------------------
+            # -----------------------------------------------------------------
     t1 = time.time()
     print('Elapsed time: {0:.2f} min'.format((t1 - t0) / 60.))
     # Save Dataframe
     df = pd.DataFrame(res, 
-                      columns=['expnum', 'ccdnum', 'nite', 'band', 
+                      columns=['expnum', 'ccdnum', 'nite', 't_eff', 'band', 
                                'region', 'mad', 'mean', 'std', 'npix']
     )
     df.to_csv(outname, index=False, header=True)
@@ -402,5 +438,31 @@ if __name__ == '__main__':
     print(time.ctime())
 
     # Here: argparse for a list of immasked and cat files
-    aux_main()
+    hgral = 'Script to evaluate the symmetry in flux for left/right regions'
+    hgral += ' of detected objects'
+    arg = argparse.ArgumentParser(description=hgral)
+    h0 = 'Input a CSV table containing at least columns: t_eff, path, filetype'
+    arg.add_argument('--tab', help=h0)
+    aux_ccd = [41, 28, 4, 55]
+    h1 = 'List of space-separated CCDs for which to do the calculations.'
+    h1 += ' Default: {0}'.format(aux_ccd)
+    arg.add_argument('--ccd', help=h1, nargs='+', type=int, default=aux_ccd)
+    aux_region = [1, 4096, 1024, 1948]
+    h2 = 'Section of each CCD to be used, as space-separated values'
+    h2 += ' Format: x0 x1 y0 y1. Where y-axis'
+    h2 += ' is the long dimension. Default: {0}'.format(aux_region)
+    arg.add_argument('--area', help=h2, type=int, nargs='+',
+                     default=aux_region)
+    aux_out = '2region_stat_PID{0}.csv'.format(os.getpid())
+    h3 = 'Output name for the CSV table of the calculations. Default:'
+    h3 += '{0}'.format(aux_out)
+    arg.add_argument('--out', help=h3, default=aux_out)
+    # Parse
+    arg = arg.parse_args()
+    # Note the path is not the specific file location but the parent directory
+    aux_main(outname=arg.out, 
+             d0_range=arg.area[:2], 
+             d1_range=arg.area[2:],
+             table=arg.tab,
+             ccdlist=arg.ccd)
 
