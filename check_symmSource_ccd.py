@@ -257,21 +257,21 @@ def aux_main(outname='2region_stat.csv',
     - table: filename of the CSV table containing t_eff, path, filetype
     - ccdlist: 
     """
-    ccd = 41
+    # ccd = 41
     # Call opening of files
-    x1 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
-    x1 += "D00773758/p01/red/immask/D00773758_g_c41_r3563p01_immasked.fits.fz"
-    x2 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
-    x2 += "D00773758/p01/red/immask/D00773758_g_c28_r3563p01_immasked.fits.fz"
-    
-    y1 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
-    y1 += "D00773758/p01/cat/D00773758_g_c41_r3563p01_red-fullcat.fits"
-    y2 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
-    y2 += "D00773758/p01/cat/D00773758_g_c28_r3563p01_red-fullcat.fits"
-    fnm1 = [x1, x2]
-    fnm2 = [y1, y2]
-    ccd = [ccd]
+    # x1 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
+    # x1 += "D00773758/p01/red/immask/D00773758_g_c41_r3563p01_immasked.fits.fz"
+    # x2 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
+    # x2 += "D00773758/p01/red/immask/D00773758_g_c28_r3563p01_immasked.fits.fz" 
+    # y1 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
+    # y1 += "D00773758/p01/cat/D00773758_g_c41_r3563p01_red-fullcat.fits"
+    # y2 = "/archive_data/desarchive/OPS/firstcut/Y6N/20180914-r3563/"
+    # y2 += "D00773758/p01/cat/D00773758_g_c28_r3563p01_red-fullcat.fits"
+    # fnm1 = [x1, x2]
+    # fnm2 = [y1, y2]
+    # ccd = [ccd]
 
+    t0 = time.time()
     # Open table, identify filetypes
     df = pd.read_csv(table)
     df.columns = df.columns.map(str.lower)
@@ -341,7 +341,6 @@ def aux_main(outname='2region_stat.csv',
         # Alse save T_EFF 
         t_eff = df.loc[df['expnum'] == expnum, 't_eff'].values[0]
 
-        t0 = time.time()
         for obj in range(cnt_x.size): 
             # Using the above parameters define 2 circular regions 
             try:
@@ -355,9 +354,14 @@ def aux_main(outname='2region_stat.csv',
             # Get the statistics for each region
             st_l = masked_stat(r_left)
             st_r = masked_stat(r_right)
-            # 
-            aux_l = [expnum, ccdnum, nite, band, t_eff, region] + st_l
-            aux_r = [expnum, ccdnum, nite, band, t_eff, region] + st_r
+            # Get fitted parameters for each object
+            fpar = [cnt_x[obj], cnt_y[obj], a[obj], 
+                    sel['b_image'].values[obj],
+                    sel['theta_image'].values[obj], 
+                    sel['number'].values[obj]]
+            #
+            aux_l = [expnum, ccdnum, nite, band, t_eff, region] + fpar + st_l
+            aux_r = [expnum, ccdnum, nite, band, t_eff, region] + fpar + st_r
             #
             res.append(aux_l)
             res.append(aux_r)
@@ -428,9 +432,13 @@ def aux_main(outname='2region_stat.csv',
     print('Elapsed time: {0:.2f} min'.format((t1 - t0) / 60.))
     # Save Dataframe
     df = pd.DataFrame(res, 
-                      columns=['expnum', 'ccdnum', 'nite', 't_eff', 'band', 
+                      columns=['expnum', 'ccdnum', 'nite', 't_eff', 'band',
+                               'x_image', 'y_image', 
+                               'a_image', 'b_image', 'theta_image', 
+                               'number',
                                'region', 'mad', 'mean', 'std', 'npix']
     )
+    # Need to include centroid, a, b, theta, object ID
     df.to_csv(outname, index=False, header=True)
     print('Saved: {0}'.format(outname))
 
