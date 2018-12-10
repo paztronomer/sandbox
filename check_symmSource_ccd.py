@@ -434,7 +434,7 @@ def aux_main(outname='2region_stat.csv',
     print('Elapsed time: {0:.2f} min'.format((t1 - t0) / 60.))
     # Save Dataframe
     df = pd.DataFrame(res, 
-                      columns=['expnum', 'ccdnum', 'nite', 't_eff', 'band',
+                      columns=['expnum', 'ccdnum', 'nite', 'band', 't_eff',
                                'x_image', 'y_image', 
                                'a_image', 'b_image', 'theta_image', 
                                'number',
