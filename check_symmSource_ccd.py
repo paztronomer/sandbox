@@ -361,7 +361,9 @@ def aux_main(outname='2region_stat.csv',
                     sel['number'].values[obj]]
             #
             aux_l = [expnum, ccdnum, nite, band, t_eff, region] + fpar + st_l
+            aux_l += ['L']
             aux_r = [expnum, ccdnum, nite, band, t_eff, region] + fpar + st_r
+            aux_r += ['R']
             #
             res.append(aux_l)
             res.append(aux_r)
@@ -436,7 +438,8 @@ def aux_main(outname='2region_stat.csv',
                                'x_image', 'y_image', 
                                'a_image', 'b_image', 'theta_image', 
                                'number',
-                               'region', 'mad', 'mean', 'std', 'npix']
+                               'region', 'mad', 'mean', 'std', 'npix',
+                               'LR']
     )
     # Need to include centroid, a, b, theta, object ID
     df.to_csv(outname, index=False, header=True)
