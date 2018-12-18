@@ -8,6 +8,7 @@ import argparse
 import logging
 import numpy as np
 from scipy import interpolate
+from scipy import stats
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -104,10 +105,12 @@ def table_catalog(cat, h_cat):
     return df_cat
 
 def region_lr(cnt_coo, a, 
+              rad_factor=1,
               angle_lr=[np.pi, 0], 
               alpha=10, 
               sampling_factor=3,
-              img=None):
+              img=None,
+              do_plot=False,):
     """ Method to get data from 2 circular regions at the left and right
     or a centroid. Returns 2 masked arrays, one for the left and other for
     the right side of the centroid.
@@ -119,13 +122,21 @@ def region_lr(cnt_coo, a,
     Inputs
     - cnt_coo: centroid, where coordinates are [x_image, y_image]
     - radius: adjusted radio of the object
+    - rad_factor: factor to be multiplied for the major axis value of the
+    elliptical adjust to the source
     - angle_lr: left, right reference angles to create the circular regions 
     - alpha: angle in degrees to set a range above and below the left/right
     reference angles
+    - sampling_factor: factor to supersample in both direction
+    - img: image to be displayed for visualization
+    - do_plot: boolean to set the plotting of the stamp
     """
+    #
+    # Creation of the stamp: interpolation and selected regions
+    #
     # Get the circle sectors, for left and right of the centroid
     # Radius for statistics
-    radius = 2 * a
+    radius = rad_factor * a
     # Circular section 
     # Upper and lower angles
     theta_l_up = angle_lr[0] - np.deg2rad(alpha)
@@ -133,103 +144,237 @@ def region_lr(cnt_coo, a,
     theta_r_up = angle_lr[1] + np.deg2rad(alpha)
     theta_r_dw = angle_lr[1] - np.deg2rad(alpha)
     # (x, y) coordinates of limit positions, from polar coordinates
+    # These coordinates are centered at the origin
     xl = radius * np.cos(theta_l_up)
     yl_up, yl_dw = radius * np.sin(theta_l_up), radius * np.sin(theta_l_dw)
     xr = radius * np.cos(theta_r_up)
     yr_up, yr_dw = radius * np.sin(theta_r_up), radius * np.sin(theta_r_dw)
-    # Round values for coordinates limits, as they represent pixel positions
-    # xl, yl_up, yl_dw = np.round(xl), np.round(yl_up), np.round(yl_dw)
-    # xr, yr_up, yr_dw = np.round(xr), np.round(yr_up), np.round(yr_dw)
-    # xl, yl_up, yl_dw = int(xl), int(yl_up), int(yl_dw)
-    # xr, yr_up, yr_dw = int(xr), int(yr_up), int(yr_dw)
     #
-    # Discretize just at the very end
+    # Stamp centroid and borders
+    # 
+    xc_s, yc_s = np.abs(xl), np.abs(yl_dw)
+    xl_s, yl_dw_s, yl_up_s = 0, 0, np.ptp([yl_dw, yl_up])
+    xr_s, yr_dw_s, yr_up_s = np.ptp([xl, xr]), 0, np.ptp([yr_dw, yr_up])
     #
-    # Translate the coordinates, by the offset of the centroid
-    xcnt, ycnt = cnt_coo
-    xl += xcnt
-    yl_up += ycnt
-    yl_dw += ycnt 
-    xr += xcnt
-    yr_up += ycnt
-    yr_dw += ycnt
+    # CCD region centroid and borders
+    #
+    xc_ccd, yc_ccd = cnt_coo
+    xl_ccd, xr_ccd = xl + xc_ccd, xr + xc_ccd
+    yl_dw_ccd, yl_up_ccd = yl_dw + yc_ccd, yl_up + yc_ccd
+    yr_dw_ccd, yr_up_ccd = yr_dw + yc_ccd, yr_up + yc_ccd
     # The precission value 0.001 was defined arbitrary
     if (((yl_dw - yr_dw) < 0.001) and ((yl_up - yr_up) < 0.001)):
         pass
     else:
+        print('ERROR')
         logging.error('Circular sections are not symmetric')
         exit(1)
+    #
+    # Circular section auxiliary functions
+    #
     # Get the pixels inside the circle sections: 2 lines needs to be adjusted
     # Outputs from linregress are: m, b, r_value, p_value, std_err
-    f = interpolate.interp1d([xl, xcnt, xr], 
-                             [yl_up, ycnt, yr_dw], 
-                             kind='linear',
-                             bounds_error=False,
-                             fill_value='extrapolate')
-    g = interpolate.interp1d([xl, xcnt, xr], 
-                             [yl_dw, ycnt, yr_up], 
-                             kind='linear',
-                             bounds_error=False,
-                             fill_value='extrapolate')
-    # Evaluate each one of the coordinates to see if they belong to circle 
-    # left/right sections
+    # Then we'll evaluate each one of the coordinates to see if they belong 
+    # to circle left/right sections
+    # These 2 lines are fitted on the stamp coordinate system
+    # f = interpolate.interp1d([xl_s, xc_s, xr_s], 
+    #                          [yl_up_s, yc_s, yr_dw_s], 
+    #                          kind='linear',
+    #                          bounds_error=False,
+    #                          fill_value='extrapolate')
+    # g = interpolate.interp1d([xl_s, xc_s, xr_s], 
+    #                          [yl_dw_s, yc_s, yr_up_s], 
+    #                          kind='linear',
+    #                          bounds_error=False,
+    #                          fill_value='extrapolate')
+    # Linear regression
+    m1, b1, r1, p1, stderr1 = stats.linregress([xl_s, xc_s, xr_s], 
+                                               [yl_up_s, yc_s, yr_dw_s],)
+    m2, b2, r2, p2, stderr2 = stats.linregress([xl_s, xc_s, xr_s], 
+                                               [yl_dw_s, yc_s, yr_up_s],)
+    f = lambda x: m1 * x + b1
+    g = lambda x: m2 * x + b2
     #
-    # Resampling the grid to make it finer
+    # Create a grid with higher resolution
     #
-    # Increase the number of points of the grid to each pixel be 3x3 or
-    # the value defined by the sampling_factor
-    xmin, xmax = int(np.floor(xl)), int(np.ceil(xr))
-    ymin, ymax = int(np.floor(yl_dw)), int(np.ceil(yl_up))
-    Nx = (sampling_factor) * (xmax - xmin) + 1
-    Ny = (sampling_factor) * (ymax - ymin) + 1
+    # Increase the number of points of the grid to each pixel be NxN as defined
+    # by sampling_factor
+    # Use left side y-coordinate to define the grid
+    xmin_grid, xmax_grid = int(np.floor(xl_ccd)), int(np.ceil(xr_ccd))
+    ymin_grid, ymax_grid = int(np.floor(yl_dw_ccd)), int(np.ceil(yl_up_ccd))
+    # add some range to the y-axis
+    # ymin_grid -= 5
+    # ymax_grid += 5
+    # Number of total boxes the higher resolution wil contain
+    Nx = (sampling_factor) * np.ptp([xmax_grid, xmin_grid]) + 1
+    Ny = (sampling_factor) * np.ptp([ymax_grid, ymin_grid]) + 1
     # Define the supersampled grid
-    yy, xx = np.meshgrid(np.linspace(ymin, ymax, Ny), 
-                         np.linspace(xmin, xmax, Nx),
+    yy, xx = np.meshgrid(np.linspace(ymin_grid, ymax_grid, Ny), 
+                         np.linspace(xmin_grid, xmax_grid, Nx),
                          sparse=False, indexing='ij')
     #
     # Interpolate grid values
     #
     # 1) Define initial grid from the image, and transform it to set of 
     # coordinates
-    yy_ini, xx_ini = np.mgrid[ymin:ymax, xmin:xmax]
+    yy_ini, xx_ini = np.mgrid[ymin_grid:ymax_grid, xmin_grid:xmax_grid]
     points = np.vstack([xx_ini.ravel(), yy_ini.ravel()])
-    values = img[ymin:ymax, xmin:xmax].flatten()
+    values = img[ymin_grid:ymax_grid, xmin_grid:xmax_grid].flatten()
     # 2) Using the positions and values from the original image, flesh out the
     # finer grid. Nearest value will be assumed
-    interp_img = interpolate.griddata(points.T, values, (xx, yy), 
-                                      method='nearest')
-    # Normalize byt the number of subpixels each pixel is divided
+    interp_img = interpolate.griddata(
+        points.T, 
+        values, 
+        (xx, yy), 
+        method='nearest'
+    )
+    # 3) Normalize by the number of subpixels each pixel is divided, then I'll
+    # not create additional values
     interp_img /= np.power(sampling_factor, 2)
+    #
+    # NOTE: xx, xx_ini, yy, yy_ini have the same range of values, based on the 
+    # original CCD positions. The interpolated grid (interp_img) has positions
+    # shifted to start at the origin.
+    
+    # To get the region of interest from the original image
+    # img[ymin_grid:ymax_grid, xmin_grid:xmax_grid]
+
+    #
+    # Masks for the circular regions
+    #
+    # Select the points from the fine grid belonging to the region of interest 
+    # and create a mask. Make sure to mask using the correct set of coordinates
+    #
+    # Circle function
+    h = lambda x, y, X, Y: np.sqrt(np.power(x - X, 2.) + np.power(y - Y, 2.)) 
+    # Define set of coordinates for the stamp
+    xx_s, yy_s = xx - xmin_grid, yy - yl_dw_ccd
+    # 1) Left/right half circle: use the set of coordinates from the
+    # grid interpolation process to define the pixels positions
+    # Get the mask
+    zz_s = h(xx_s, yy_s, xc_s, yc_s) #np.sqrt(np.power(xx_s, 2.) + np.power(yy_s, 2.))
+    interp_circle_msk = zz_s > radius
+    # Apply selection to left/right halves. Need to combine masks
+    aux_c01 = np.ma.masked_where(interp_circle_msk, xx_s) 
+    c01 = aux_c01 > xc_s
+    aux_c02 = np.ma.masked_where(interp_circle_msk, xx_s) 
+    c02 = aux_c02 < xc_s
+    circ_l = np.ma.masked_where(c01, interp_img)
+    circ_r = np.ma.masked_where(c02, interp_img)
+    circ_l_msk = np.ma.getmask(circ_l)
+    circ_r_msk = np.ma.getmask(circ_r)
+    """
+    # Circle function
+    h = lambda x, y: np.sqrt(np.power(x, 2.) + np.power(y, 2.)) 
+    # Define set of coordinates for the stamp
+    xx_s, yy_s = xx - xl_ccd, yy - yl_dw_ccd
+    # Move to the center of the stamp to have coordinates centered at zero
+    xx_s -= xc_s
+    yy_s -= yc_s
+    # 1) Left/right half circle: use the set of coordinates from the
+    # grid interpolation process to define the pixels positions
+    # Get the mask
+    zz_s = h(xx_s, yy_s) #np.sqrt(np.power(xx_s, 2.) + np.power(yy_s, 2.))
+    interp_circle_msk = zz_s > radius
+    # Apply selection to left/right halves. Need to combine masks
+    aux_c01 = np.ma.masked_where(interp_circle_msk, xx_s) 
+    c01 = aux_c01 > 0
+    aux_c02 = np.ma.masked_where(interp_circle_msk, xx_s) 
+    c02 = aux_c02 < 0
+    circ_l = np.ma.masked_where(c01, interp_img)
+    circ_r = np.ma.masked_where(c02, interp_img)
+    circ_l_msk = np.ma.getmask(circ_l)
+    circ_r_msk = np.ma.getmask(circ_r)
+    """
+    #
+    # 2) Left/right angular circle sections
+    
+    # the following works well
+    plt.plot(xx_s, g(xx_s), 'b.')
+    plt.plot(xx_s, yy_s, 'ro', zorder=0)
+    plt.show()
+
+    # c03 = np.logical_and(yy_s <= f(xx_s), yy_s >= g(xx_s))
+    # c04 = np.logical_and(yy <= g(xx), yy >= f(xx))
+    # c_both = np.logical_or(c_left, c_right)
+    
+
+
+    exit()
+
+    if False:
+        c_left = np.logical_and(yy <= f(xx), yy >= g(xx))
+        c_right = np.logical_and(yy <= g(xx), yy >= f(xx))
+        c_both = np.logical_or(c_left, c_right)
+    # Mask image
+    if False: 
+        ma_img = np.ma.masked_where(~c_both, interp_img)
+        ma_left = np.ma.masked_where(~c_left, interp_img)
+        ma_right = np.ma.masked_where(~c_right, interp_img)
+    
+    # plt.imshow(ma_left)
+    # plt.show()
+    exit()
+    
+    
+    # 2) Left/right circle area (half and half)
+
+
+
     # Plotting the resampled grid for evaluation
-    if not True:
-        im_norm = ImageNormalize(img, 
+    if do_plot:
+        stamp = img[ymin:ymax, xmin:xmax]
+        im_norm = ImageNormalize(stamp, 
                                  interval=ZScaleInterval(),
                                  stretch=SqrtStretch())
         im_norm2 = ImageNormalize(interp_img, 
                                   interval=ZScaleInterval(),
                                   stretch=SqrtStretch())
-        fig, ax = plt.subplots(1, 3, figsize=(9, 3))
-        ax[0].imshow(img, norm=im_norm, origin='lower')
-        ax[1].imshow(img, norm=im_norm, origin='lower', cmap='viridis')
-        ax[1].scatter(xx, yy, marker='.', s=5, color='white', alpha=0.3)
-        ax[2].imshow(interp_img, norm=im_norm2, origin='lower')
-        #
+        fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+        kw = {'origin': 'lower', 'cmap': 'viridis',}
+        # i = ax[0, 0].imshow(img, norm=im_norm, **kw)
+        # ax[0, 0].plot(xcnt, ycnt, 'ro')
+        i = ax[0].imshow(img, norm=im_norm, **kw)
+        # ax[1, 0].scatter(xx, yy, marker='.', s=5, color='white', alpha=0.3)
+        ax[0].plot(xcnt, ycnt, 'ro')
+        # i2 = ax[0, 1].imshow(interp_img, norm=im_norm2, **kw)
+        i2 = ax[1].imshow(interp_img, norm=im_norm2, **kw)
+        # Some text for clarity
+        ax[0].set_title('Original resolution')
+        ax[1].set_title('Interpolated image')
+        # Circumference and circular sections
+        circle = mpatches.Circle([xcnt, ycnt], 
+                                  radius=radius, 
+                                  edgecolor='tomato',
+                                  linestyle='-',
+                                  facecolor=None, 
+                                  fill=False, 
+                                  linewidth=1.5)
+        circle2 = mpatches.Circle([xcnt - xmin, ycnt - ymin], 
+                                   radius=radius, 
+                                   edgecolor='tomato',
+                                   linestyle='-',
+                                   facecolor=None, 
+                                   fill=False, 
+                                   linewidth=1.5)
+        ax[0].add_artist(circle)
+        ax[1].add_artist(circle2)
+        # Draw lines for circle section
+        ax[0].plot([xcnt, xl], [ycnt, yl_up], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xl], [ycnt, yl_dw], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xr], [ycnt, yr_up], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xr], [ycnt, yr_dw], '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin, xl - xmin], [ycnt - ymin, yl_up - ymin], '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin, xl - xmin], [ycnt - ymin, yl_dw - ymin], '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin, xr - xmin], [ycnt - ymin, yr_up - ymin], '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin, xr - xmin], [ycnt - ymin, yr_dw - ymin], '-', lw=1, color='k')
+        # Limits
         ax[0].set_xlim([xmin, xmax])
-        ax[0].set_ylim([ymin - 10, ymax + 10])
-        ax[1].set_xlim([xmin, xmax])
-        ax[1].set_ylim([ymin - 10, ymax + 10])
+        ax[0].set_ylim([ymin, ymax])
+        # ax[1].set_xlim([xmin, xmax])
+        # ax[1].set_ylim([ymin, ymax])
+        plt.suptitle('Original vs interpolated. Plot works based on symmetry')
         plt.show()
-    #
-    # Select the points from the fine grid belonging to the region of interest 
-    # Create a mask
-    #
-    c_left = np.logical_and(yy <= f(xx), yy >= g(xx))
-    c_right = np.logical_and(yy <= g(xx), yy >= f(xx))
-    c_both = np.logical_or(c_left, c_right)
-    # Mask image
-    ma_img = np.ma.masked_where(~c_both, interp_img)
-    ma_left = np.ma.masked_where(~c_left, interp_img)
-    ma_right = np.ma.masked_where(~c_right, interp_img)
     # Return only left/right
     return ma_left, ma_right
 
@@ -297,7 +442,7 @@ def aux_main(outname='2region_stat.csv',
             fnm2 += b
         else:
             logging.warning('CCD:{0} error locating files. Skip'.format(c))
-    # Flatten the arrays, because glob.glob introducesan additional level of
+    # Flatten the arrays, because glob.glob introduces an additional level of
     # nesting
     fnm1 = np.array(fnm1).flatten()
     fnm2 = np.array(fnm2).flatten()
@@ -324,7 +469,20 @@ def aux_main(outname='2region_stat.csv',
         # Dataframe of the centroids of interest
         # Note the centroids are decimal
         sel = dfcat.loc[cond1 & cond2]
-        
+
+        #
+        # Experimentation
+        #
+        aux_val = dfcat['mag_aper_4'].values
+        aux_val = aux_val[np.where(aux_val < 90)]
+        q = np.percentile(aux_val, 10)
+        # Add the magnitude cut
+        sel = sel.loc[sel['mag_aper_4'] < q]
+        #
+        #
+        #
+        print(os.path.basename(fnm1[i]), len(dfcat.index), len(sel.index))
+
         # Iterate over all the objects in the region. For each of them 
         # calculate the left/right flux statistics
        
@@ -338,20 +496,27 @@ def aux_main(outname='2region_stat.csv',
         nite = int(h_sci['NITE'])
         band = h_sci['BAND'].strip()
         region = '[{0}:{1},{2}:{3}]'.format(*d1_range, *d0_range)
-        # Alse save T_EFF 
+        # Also save T_EFF 
         t_eff = df.loc[df['expnum'] == expnum, 't_eff'].values[0]
 
         for obj in range(cnt_x.size): 
             # Using the above parameters define 2 circular regions 
-            try:
-                r_left, r_right = region_lr([cnt_x[obj], cnt_y[obj]], a[obj], 
-                                            angle_lr=[np.pi, 0], 
-                                            alpha=22.5, 
-                                            img=sci)
-            except:
-                print(sel.iloc[obj]['flags'])
-                exit()
+            r_left, r_right = region_lr([cnt_x[obj], cnt_y[obj]], a[obj], 
+                                        rad_factor=1,
+                                        alpha=10,
+                                        angle_lr=[np.pi, 0], 
+                                        img=sci,
+                                        do_plot=True,)
+            # except:
+            #     print('FLAGS={0}'.format(sel.iloc[obj]['flags']))
+            #     exit()
+            #
             # Get the statistics for each region
+            
+            #
+            # Add scipy.stats.anderson_ksampi, scipy.stats.kruskal(*args)
+            #
+            
             st_l = masked_stat(r_left)
             st_r = masked_stat(r_right)
             # Get fitted parameters for each object
@@ -441,7 +606,6 @@ def aux_main(outname='2region_stat.csv',
                                'region', 'mad', 'mean', 'std', 'npix',
                                'LR']
     )
-    # Need to include centroid, a, b, theta, object ID
     df.to_csv(outname, index=False, header=True)
     print('Saved: {0}'.format(outname))
 
@@ -454,11 +618,11 @@ if __name__ == '__main__':
     arg = argparse.ArgumentParser(description=hgral)
     h0 = 'Input a CSV table containing at least columns: t_eff, path, filetype'
     arg.add_argument('--tab', help=h0)
-    aux_ccd = [41, 28, 4, 55]
+    aux_ccd = [41, 28, 11, 52]
     h1 = 'List of space-separated CCDs for which to do the calculations.'
     h1 += ' Default: {0}'.format(aux_ccd)
     arg.add_argument('--ccd', help=h1, nargs='+', type=int, default=aux_ccd)
-    aux_region = [1, 4096, 1024, 1948]
+    aux_region = [1, 4096, 1024, 1536] # before end was 1948
     h2 = 'Section of each CCD to be used, as space-separated values'
     h2 += ' Format: x0 x1 y0 y1. Where y-axis'
     h2 += ' is the long dimension. Default: {0}'.format(aux_region)
