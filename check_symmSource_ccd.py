@@ -119,6 +119,10 @@ def region_lr(cnt_coo, a,
     This method works well if:
     * borders of circular regions are not +/- pi/2
     * both regions can be defined with only 2 straight lines
+    
+    To refine: do not use the stamp but do calculations directly on the CCD
+    section
+    
     Inputs
     - cnt_coo: centroid, where coordinates are [x_image, y_image]
     - radius: adjusted radio of the object
@@ -150,18 +154,28 @@ def region_lr(cnt_coo, a,
     xr = radius * np.cos(theta_r_up)
     yr_up, yr_dw = radius * np.sin(theta_r_up), radius * np.sin(theta_r_dw)
     #
-    # Stamp centroid and borders
-    # 
-    xc_s, yc_s = np.abs(xl), np.abs(yl_dw)
-    xl_s, yl_dw_s, yl_up_s = 0, 0, np.ptp([yl_dw, yl_up])
-    xr_s, yr_dw_s, yr_up_s = np.ptp([xl, xr]), 0, np.ptp([yr_dw, yr_up])
+    # Stamp centroid and borders. The stamps is only used as auxiliary for
+    # selecting circular regions
+    # Note yr_dw == yl_dw and yr_up == yl_up for symmetric sections
+    xc_s, yc_s = radius, radius
+    xl_s, xr_s = 0, 2. * radius
+    yl_dw_s, yr_dw_s = 0, 0 
+    yl_up_s, yr_up_s = 2. * radius, 2. * radius
+    # xc_s, yc_s = np.abs(xl), np.abs(yl_dw)
+    # xl_s, yl_dw_s, yl_up_s = 0, 0, np.ptp([yl_dw, yl_up])
+    # xr_s, yr_dw_s, yr_up_s = np.ptp([xl, xr]), 0, np.ptp([yr_dw, yr_up])
+    if not True:
+        print(xc_s, yc_s, xl_s, yl_dw_s, yl_up_s, xr_s, yr_dw_s, yr_up_s)
     #
-    # CCD region centroid and borders
-    #
+    # CCD region centroid and borders, use radius to define region
+    # C=Object centroid is at the image center
     xc_ccd, yc_ccd = cnt_coo
-    xl_ccd, xr_ccd = xl + xc_ccd, xr + xc_ccd
-    yl_dw_ccd, yl_up_ccd = yl_dw + yc_ccd, yl_up + yc_ccd
-    yr_dw_ccd, yr_up_ccd = yr_dw + yc_ccd, yr_up + yc_ccd
+    xl_ccd, xr_ccd = xc_ccd - radius , xc_ccd + radius
+    yl_dw_ccd, yl_up_ccd = yc_ccd - radius, yc_ccd + radius
+    yr_dw_ccd, yr_up_ccd = yc_ccd - radius, yc_ccd + radius
+    # xl_ccd, xr_ccd = xl + xc_ccd, xr + xc_ccd
+    # yl_dw_ccd, yl_up_ccd = yl_dw + yc_ccd, yl_up + yc_ccd
+    # yr_dw_ccd, yr_up_ccd = yr_dw + yc_ccd, yr_up + yc_ccd
     # The precission value 0.001 was defined arbitrary
     if (((yl_dw - yr_dw) < 0.001) and ((yl_up - yr_up) < 0.001)):
         pass
@@ -235,6 +249,9 @@ def region_lr(cnt_coo, a,
     # NOTE: xx, xx_ini, yy, yy_ini have the same range of values, based on the 
     # original CCD positions. The interpolated grid (interp_img) has positions
     # shifted to start at the origin.
+    if False:
+        plt.imshow(interp_img)
+        plt.show()
     
     # To get the region of interest from the original image
     # img[ymin_grid:ymax_grid, xmin_grid:xmax_grid]
@@ -247,13 +264,18 @@ def region_lr(cnt_coo, a,
     #
     # Circle function
     h = lambda x, y, X, Y: np.sqrt(np.power(x - X, 2.) + np.power(y - Y, 2.)) 
-    # Define set of coordinates for the stamp
-    xx_s, yy_s = xx - xmin_grid, yy - yl_dw_ccd
+    # Define set of coordinates for the stamp. Lowe corner is the origin
+    # xx_s, yy_s = xx - xl_ccd, yy - yl_dw_ccd
+    xx_s, yy_s = xx - xmin_grid, yy - ymin_grid
     # 1) Left/right half circle: use the set of coordinates from the
     # grid interpolation process to define the pixels positions
     # Get the mask
     zz_s = h(xx_s, yy_s, xc_s, yc_s) #np.sqrt(np.power(xx_s, 2.) + np.power(yy_s, 2.))
     interp_circle_msk = zz_s > radius
+    #
+    if not True:
+        plt.plot(xx_s, yy_s, 'g.')
+        plt.show()
     # Apply selection to left/right halves. Need to combine masks
     aux_c01 = np.ma.masked_where(interp_circle_msk, xx_s) 
     c01 = aux_c01 > xc_s
@@ -263,6 +285,10 @@ def region_lr(cnt_coo, a,
     circ_r = np.ma.masked_where(c02, interp_img)
     circ_l_msk = np.ma.getmask(circ_l)
     circ_r_msk = np.ma.getmask(circ_r)
+    #
+    if not True:
+        plt.imshow(circ_l)
+        plt.show()
     """
     # Circle function
     h = lambda x, y: np.sqrt(np.power(x, 2.) + np.power(y, 2.)) 
@@ -288,9 +314,21 @@ def region_lr(cnt_coo, a,
     """
     #
     # 2) Left/right angular circle sections
-    
+    c03 = ~np.logical_and(yy_s <= f(xx_s), yy_s >= g(xx_s))
+    c04 = ~np.logical_and(yy_s >= f(xx_s), yy_s <= g(xx_s))
+    c05 = np.ma.masked_where(interp_circle_msk, c03)
+    c06 = np.ma.masked_where(interp_circle_msk, c04)
+    #
+    if not True:
+        plt.imshow(np.ma.masked_where(c05, interp_img))
+        plt.imshow(np.ma.masked_where(c06, interp_img)) 
+        plt.show()
+    exit()
+
     # the following works well
+    plt.plot(xc_s, yc_s, '*', color='blue', markersize=20)
     plt.plot(xx_s, g(xx_s), 'b.')
+    plt.plot(xx_s, f(xx_s), 'k.')
     plt.plot(xx_s, yy_s, 'ro', zorder=0)
     plt.show()
 
