@@ -9,6 +9,7 @@ import logging
 import numpy as np
 from scipy import interpolate
 from scipy import stats
+from skimage.measure import compare_ssim
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -270,7 +271,7 @@ def region_lr(cnt_coo, a,
     # 1) Left/right half circle: use the set of coordinates from the
     # grid interpolation process to define the pixels positions
     # Get the mask
-    zz_s = h(xx_s, yy_s, xc_s, yc_s) #np.sqrt(np.power(xx_s, 2.) + np.power(yy_s, 2.))
+    zz_s = h(xx_s, yy_s, xc_s, yc_s) 
     interp_circle_msk = zz_s > radius
     #
     if not True:
@@ -318,50 +319,17 @@ def region_lr(cnt_coo, a,
     c04 = ~np.logical_and(yy_s >= f(xx_s), yy_s <= g(xx_s))
     c05 = np.ma.masked_where(interp_circle_msk, c03)
     c06 = np.ma.masked_where(interp_circle_msk, c04)
+    angle_l = np.ma.masked_where(c05, interp_img)
+    angle_r = np.ma.masked_where(c06, interp_img)
     #
     if not True:
-        plt.imshow(np.ma.masked_where(c05, interp_img))
-        plt.imshow(np.ma.masked_where(c06, interp_img)) 
+        plt.imshow(np.ma.masked_where(angle_l, interp_img))
+        plt.imshow(np.ma.masked_where(angle_r, interp_img)) 
         plt.show()
-    exit()
-
-    # the following works well
-    plt.plot(xc_s, yc_s, '*', color='blue', markersize=20)
-    plt.plot(xx_s, g(xx_s), 'b.')
-    plt.plot(xx_s, f(xx_s), 'k.')
-    plt.plot(xx_s, yy_s, 'ro', zorder=0)
-    plt.show()
-
-    # c03 = np.logical_and(yy_s <= f(xx_s), yy_s >= g(xx_s))
-    # c04 = np.logical_and(yy <= g(xx), yy >= f(xx))
-    # c_both = np.logical_or(c_left, c_right)
-    
-
-
-    exit()
-
-    if False:
-        c_left = np.logical_and(yy <= f(xx), yy >= g(xx))
-        c_right = np.logical_and(yy <= g(xx), yy >= f(xx))
-        c_both = np.logical_or(c_left, c_right)
-    # Mask image
-    if False: 
-        ma_img = np.ma.masked_where(~c_both, interp_img)
-        ma_left = np.ma.masked_where(~c_left, interp_img)
-        ma_right = np.ma.masked_where(~c_right, interp_img)
-    
-    # plt.imshow(ma_left)
-    # plt.show()
-    exit()
-    
-    
-    # 2) Left/right circle area (half and half)
-
-
-
+    # Now: get stats from these regions!!!
     # Plotting the resampled grid for evaluation
     if do_plot:
-        stamp = img[ymin:ymax, xmin:xmax]
+        stamp = img[ymin_grid:ymax_grid, xmin_grid:xmax_grid]
         im_norm = ImageNormalize(stamp, 
                                  interval=ZScaleInterval(),
                                  stretch=SqrtStretch())
@@ -388,7 +356,7 @@ def region_lr(cnt_coo, a,
                                   facecolor=None, 
                                   fill=False, 
                                   linewidth=1.5)
-        circle2 = mpatches.Circle([xcnt - xmin, ycnt - ymin], 
+        circle2 = mpatches.Circle([xcnt - xmin_grid, ycnt - ymin_grid], 
                                    radius=radius, 
                                    edgecolor='tomato',
                                    linestyle='-',
@@ -398,14 +366,20 @@ def region_lr(cnt_coo, a,
         ax[0].add_artist(circle)
         ax[1].add_artist(circle2)
         # Draw lines for circle section
-        ax[0].plot([xcnt, xl], [ycnt, yl_up], '-', lw=1, color='k')
-        ax[0].plot([xcnt, xl], [ycnt, yl_dw], '-', lw=1, color='k')
-        ax[0].plot([xcnt, xr], [ycnt, yr_up], '-', lw=1, color='k')
-        ax[0].plot([xcnt, xr], [ycnt, yr_dw], '-', lw=1, color='k')
-        ax[1].plot([xcnt - xmin, xl - xmin], [ycnt - ymin, yl_up - ymin], '-', lw=1, color='k')
-        ax[1].plot([xcnt - xmin, xl - xmin], [ycnt - ymin, yl_dw - ymin], '-', lw=1, color='k')
-        ax[1].plot([xcnt - xmin, xr - xmin], [ycnt - ymin, yr_up - ymin], '-', lw=1, color='k')
-        ax[1].plot([xcnt - xmin, xr - xmin], [ycnt - ymin, yr_dw - ymin], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xl_ccd], [ycnt, yl_up_ccd], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xl_ccd], [ycnt, yl_dw_ccd], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xr_ccd], [ycnt, yr_up_ccd], '-', lw=1, color='k')
+        ax[0].plot([xcnt, xr_ccd], [ycnt, yr_dw_ccd], '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin_grid, xl_ccd - xmin_grid], 
+                   [ycnt - ymin_grid, yl_up_ccd - ymin_grid], 
+                   '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin_grid, xl_ccd - xmin_grid], 
+                   [ycnt - ymin_grid, yl_dw_ccd - ymin_grid], 
+                   '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin_grid, xr_ccd - xmin_grid], [ycnt - ymin, yr_up - ymin], 
+                   '-', lw=1, color='k')
+        ax[1].plot([xcnt - xmin, xr - xmin], [ycnt - ymin, yr_dw - ymin], 
+                   '-', lw=1, color='k')
         # Limits
         ax[0].set_xlim([xmin, xmax])
         ax[0].set_ylim([ymin, ymax])
@@ -414,14 +388,16 @@ def region_lr(cnt_coo, a,
         plt.suptitle('Original vs interpolated. Plot works based on symmetry')
         plt.show()
     # Return only left/right
-    return ma_left, ma_right
+    return angle_l, angle_r, circ_l, circ_r
 
-def masked_stat(ma_x):
+def masked_stat(ma_a):
     """ Receives a masked array and performs some basic statistics
     """
-    ma_x = ma_x.compressed()
+    ma_a = ma_a.compressed()
     mad = lambda x: np.median(np.abs(x - np.median(x)))
-    out = [mad(ma_x), np.mean(ma_x), np.std(ma_x), ma_x.size]
+    # Add some statistical tests
+    out = [np.mean(ma_a), np.median(ma_a), np.std(ma_a), 
+           np.var(ma_a), mad(ma_a), np.ptp(ma_a), ma_a.size]
     return out
 
 def aux_main(outname='2region_stat.csv',
@@ -489,6 +465,7 @@ def aux_main(outname='2region_stat.csv',
     res = []
 
     for i in range(len(fnm1)):
+        t_f0 = time.time()
         fits_img, fits_cat = open_fits(fnm1[i], fnm2[i])
         sci, h_sci = fits_img
         cat, h_cat = fits_cat
@@ -539,41 +516,34 @@ def aux_main(outname='2region_stat.csv',
 
         for obj in range(cnt_x.size): 
             # Using the above parameters define 2 circular regions 
-            r_left, r_right = region_lr([cnt_x[obj], cnt_y[obj]], a[obj], 
-                                        rad_factor=1,
-                                        alpha=10,
-                                        angle_lr=[np.pi, 0], 
-                                        img=sci,
-                                        do_plot=True,)
-            # except:
-            #     print('FLAGS={0}'.format(sel.iloc[obj]['flags']))
-            #     exit()
+            results = region_lr([cnt_x[obj], cnt_y[obj]], a[obj], 
+                                rad_factor=1,
+                                alpha=10,
+                                angle_lr=[np.pi, 0], 
+                                img=sci,
+                                do_plot=False,)
+            # Uncompress masked arrays
+            angle_l, angle_r, circ_l, circ_r = results
             #
             # Get the statistics for each region
-            
-            #
-            # Add scipy.stats.anderson_ksampi, scipy.stats.kruskal(*args)
-            #
-            
-            st_l = masked_stat(r_left)
-            st_r = masked_stat(r_right)
+            aux_angle_l = masked_stat(angle_l) + ['angle', 'L']
+            aux_angle_r = masked_stat(angle_r) + ['angle', 'R']
+            aux_circ_l = masked_stat(circ_l) + ['circ', 'L']
+            aux_circ_r = masked_stat(circ_r) + ['circ', 'R']
             # Get fitted parameters for each object
-            fpar = [cnt_x[obj], cnt_y[obj], a[obj], 
+            fpar = [cnt_x[obj], 
+                    cnt_y[obj], 
+                    sel['mag_aper_4'].values[obj],
+                    sel['a_image'].values[obj], 
                     sel['b_image'].values[obj],
                     sel['theta_image'].values[obj], 
-                    sel['number'].values[obj]]
-            #
-            aux_l = [expnum, ccdnum, nite, band, t_eff, region] + fpar + st_l
-            aux_l += ['L']
-            aux_r = [expnum, ccdnum, nite, band, t_eff, region] + fpar + st_r
-            aux_r += ['R']
-            #
-            res.append(aux_l)
-            res.append(aux_r)
-
-            # Seems that a higher MAD and lower mean is a good test for a healthy
-            # stellar profile
-            # Run on a set of bad and good exposures.
+                    sel['number'].values[obj],]
+            # Fill the output list
+            tmp_data = [expnum, ccdnum, nite, band, t_eff, region]
+            tmp_data += fpar
+            for reg in [aux_angle_l, aux_angle_r, aux_circ_l, aux_circ_r]:
+                t = tmp_data + reg
+                res.append(t)
             
             # -----------------------------------------------------------------
             # Construct an quick assessment plot, based in basic statistics 
@@ -633,16 +603,20 @@ def aux_main(outname='2region_stat.csv',
                 ycnt -= ymin
                 xcnt, ycnt = int(xcnt), int(ycnt)
             # -----------------------------------------------------------------
+        t_f1 = time.time()
+        print('{0:.2f} sec'.format((t_f1 - t_f0)))
     t1 = time.time()
     print('Elapsed time: {0:.2f} min'.format((t1 - t0) / 60.))
     # Save Dataframe
     df = pd.DataFrame(res, 
                       columns=['expnum', 'ccdnum', 'nite', 'band', 't_eff',
-                               'x_image', 'y_image', 
+                               'section',
+                               'x_image', 'y_image', 'mag_aper_4',
                                'a_image', 'b_image', 'theta_image', 
                                'number',
-                               'region', 'mad', 'mean', 'std', 'npix',
-                               'LR']
+                               'mean', 'median', 'std', 'var', 'mad', 
+                               'ptp', 'npix',
+                               'type', 'LR']
     )
     df.to_csv(outname, index=False, header=True)
     print('Saved: {0}'.format(outname))
