@@ -46,7 +46,7 @@ def sel_by_separation(df, threshold):
         raise
     return df_sel
 
-def diagnostic_plot(skycoo, labels=None):
+def diagnostic_plot(skycoo, labels=None, savep=False):
     """ Method to do a quick visualization of the observed fields
     Parameters
     ----------
@@ -54,6 +54,8 @@ def diagnostic_plot(skycoo, labels=None):
         astropy SkyCoord object contanining the positions to be plotted
     labels: array
         one dimensional array containing the labels for each of the clusters
+    savep: boolean
+        Wether to save or not the plot
     """
     plt.close("all")
     fig = plt.figure(figsize=(8,6), constrained_layout=True)
@@ -83,11 +85,22 @@ def diagnostic_plot(skycoo, labels=None):
     plt.subplots_adjust(hspace=0.2, 
                         left=0.07, bottom=0.07, 
                         top=0.99, right=0.99)
+    # Save figure
+    if savep:
+        outnm = "diag_clust_PID{0}.png".format(os.getpid())
+        plt.savefig(outnm, dpi=300, format="png")
+        logging.info("Written output plot: {0}".format(outnm))
     plt.show()
     return True
 
-def diagnostic_distanceM(distanceMatrix):
+def diagnostic_distanceM(distanceMatrix, savep=False):
     """ Simple matrix plotting for quick assessment
+    Parameters
+    ----------
+    distanceMatrix: 2D array
+        Square matrix of distances
+    savep: boolean
+        Whether to save or not the plot
     """
     plt.close("all")
     fig, ax = plt.subplots()
@@ -98,6 +111,11 @@ def diagnostic_distanceM(distanceMatrix):
     plt.colorbar(im, cax=caxis, extend="max", label=r"dist$_{n}$ [deg]")
     # Easy layout
     plt.tight_layout()
+    # Save plot
+    if savep:
+        outnm = "diag_distMatrix_PID{0}.png".format(os.getpid())
+        plt.savefig(outnm, dpi=300, format="png")
+        logging.info("Written output plot: {0}".format(outnm))
     plt.show()
     return True
 
@@ -176,6 +194,8 @@ def get_argparse():
     h3 = "Numpy distance matrix, previously calculated. Ordering must be"
     h3 = " the same. Format: npy ndarray"
     arg.add_argument("--mdist", help=h3)
+    h4 = "Flag to write plots as PNG files"
+    arg.add_argument("--savep", help=h4, action="store_true")
     arg = arg.parse_args()
     return arg
 
@@ -204,9 +224,9 @@ def aux_main():
     logging.info("Saved: {0}".format(outc))
     
     # Diagnostic of exposures in the Sky
-    diagnostic_plot(fk5c, labels=clust.labels_)
+    diagnostic_plot(fk5c, labels=clust.labels_, savep=var.savep)
     # Diagnostic plot distance matrix
-    diagnostic_distanceM(mdist)
+    diagnostic_distanceM(mdist, savep=var.savep)
     return True
 
 if __name__ == '__main__':
